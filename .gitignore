@@ -1,0 +1,41 @@
+# Build artifacts
+Release/
+x64/
+x86/
+*.obj
+*.pdb
+*.iobj
+*.ipdb
+*.dll
+*.exe
+*.lib
+*.exp
+*.recipe
+*.log
+*.tlog/
+*.lastbuildstate
+
+# VS cache
+.vs/
+*.suo
+*.user
+*.sln.docstates
+*.vcxproj.FileListAbsolute.txt
+
+# Runtime
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+venv/
+satella.db
+
+# ImGui / build system
+source/Cfg/imgui/*.obj
+source/Cfg/minhook/*.obj
+source/Cfg/curl/*.obj

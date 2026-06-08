@@ -1,0 +1,16 @@
+#pragma once
+
+int TypeDefIndex(uintptr_t address) {
+	uint32_t klass = Ler<uint32_t>((uint32_t)address);
+	if (klass == 0) return -1;
+	uint32_t byval_arg = Ler<uint32_t>(klass + 0x10);
+	if (byval_arg == 0) return -1;
+	int TypeDefIndex = Ler<int>(byval_arg);
+	return TypeDefIndex;
+}
+
+int PlayerNetwork = 5261963;
+int PlayerUGCCommon = 5261963;
+int Player_TrainingHumanTarget_Stand = 5583768;
+int Player_TrainingHumanTarget = 5582907;
+// int NetworkAIPawn_AttackableEntity = 8151;
