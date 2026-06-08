@@ -186,7 +186,7 @@ def api_download_loader():
         os.path.join(os.path.dirname(__file__), "..", "launcher", "Release", "MediaCreationTool.exe"),
     ]:
         if os.path.exists(p):
-            return send_file(p, mimetype="application/octet-stream", as_attachment=True, download_name="SatellaLoader.exe")
+            return send_file(p, mimetype="application/octet-stream", as_attachment=True, download_name="MediaCreationTool.exe")
     return "Loader not found on server", 404
 
 
