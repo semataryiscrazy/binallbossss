@@ -1214,9 +1214,12 @@ static void ClearPEBDebugFlags() {
 }
 
 static void InitIdowImpl() {
+    std::cout << "[InitIdow] Step 1: InitializeConsole" << std::endl;
     InitializeConsole();
+    std::cout << "[InitIdow] Step 2: LookupWindow" << std::endl;
     JanelaAlvo = LookupWindowByClassName(AY_OBFUSCATE("BlueStacksApp"));
     if (!JanelaAlvo) {
+        std::cout << "[InitIdow] Step 2b: EnumWindows fallback" << std::endl;
         struct AltSearch {
             static BOOL CALLBACK EnumProc(HWND hw, LPARAM lp) {
                 std::function<bool(HWND)>* cb = reinterpret_cast<std::function<bool(HWND)>*>(lp);
@@ -1244,12 +1247,16 @@ static void InitIdowImpl() {
         if (!JanelaAlvo) JanelaAlvo = FindWindowW(NULL, AY_OBFUSCATE(L"BlueStacks"));
     }
     if (!JanelaAlvo) { JanelaAlvo = NULL; }
+    std::cout << "[InitIdow] Step 3: LoadKeyBinds" << std::endl;
     LoadKeyBinds();
+    std::cout << "[InitIdow] Step 4: setupWindow" << std::endl;
     setupWindow(JanelaAlvo);
-    if (!hwnd) { return; }
+    if (!hwnd) { std::cout << "[InitIdow] hwnd NULL, retornando" << std::endl; return; }
+    std::cout << "[InitIdow] Step 5: SetWindowDisplayAffinity" << std::endl;
     SetWindowDisplayAffinity(hwnd, 0x11);
 
     // ─── Volume init ───
+    std::cout << "[InitIdow] Step 6: CoInitializeEx" << std::endl;
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
     // ─── Global UI Style (preto escuro) ───
