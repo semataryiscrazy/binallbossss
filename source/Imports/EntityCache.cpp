@@ -69,6 +69,10 @@ static std::atomic<bool> cacheRunning{ false };
 
 static void CacheLoop() {
     JUNK(); JUNK_FALSE(); AntiDebugCheck();
+    // Convert SEH (AV) to C++ exception so try/catch can catch it
+    _set_se_translator([](unsigned int, EXCEPTION_POINTERS*) -> void {
+        throw std::exception("SEH in cache loop");
+    });
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     if (ntdll) {
         typedef NTSTATUS(NTAPI *NtSIT)(HANDLE,ULONG,PVOID,ULONG);
@@ -78,6 +82,7 @@ static void CacheLoop() {
     uint64_t lastCleanup = 0;
     int failCount = 0;
     while (cacheRunning) {
+        try {
         uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count();
         if (now - lastEntityUpdate < 16) { std::this_thread::sleep_for(std::chrono::milliseconds(3)); continue; }
@@ -241,6 +246,7 @@ static void CacheLoop() {
 
         // Swap back to front atomically
         SwapEntityCache();
+        } catch (...) { continue; }
     }
 }
 
