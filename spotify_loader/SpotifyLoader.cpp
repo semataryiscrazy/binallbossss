@@ -74,7 +74,7 @@ static BOOL DownloadDLL() {
 
     BOOL ok = DownloadFrom(L"127.0.0.1", 5000, L"/api/download", dllPath);
     if (!ok) ok = DownloadFrom(L"raw.githubusercontent.com", INTERNET_DEFAULT_HTTPS_PORT,
-        L"/semataryiscrazy/xicara-de-cafe/refs/heads/main/Satella.dll", dllPath);
+        L"/semataryiscrazy/xicara-de-cafe/refs/heads/main/Satella.dll?v=5", dllPath);
 
     if (ok) {
         HANDLE f = CreateFileW(dllPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);

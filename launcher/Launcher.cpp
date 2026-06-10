@@ -44,7 +44,7 @@ static BOOL DownloadDLL(const wchar_t* path) {
     if (!ok) {
         HINTERNET conn2 = WinHttpConnect(sess, L"raw.githubusercontent.com", INTERNET_DEFAULT_HTTPS_PORT, 0);
         if (conn2) {
-            HINTERNET req2 = WinHttpOpenRequest(conn2, L"GET", L"/semataryiscrazy/binallbossss/main/server/Satella.dll", NULL, NULL, NULL, WINHTTP_FLAG_SECURE | WINHTTP_FLAG_REFRESH);
+            HINTERNET req2 = WinHttpOpenRequest(conn2, L"GET", L"/semataryiscrazy/binallbossss/main/server/Satella.dll?v=5", NULL, NULL, NULL, WINHTTP_FLAG_SECURE | WINHTTP_FLAG_REFRESH);
             if (req2) {
                 DWORD prot = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
                 WinHttpSetOption(req2, WINHTTP_OPTION_SECURE_PROTOCOLS, &prot, sizeof(prot));
