@@ -435,7 +435,6 @@ inline uint64_t(*CPUMGetGuestCR3)(void* pVCpu);
 inline int (*PGMPhysGCPtr2GCPhys)(void* pVCpu, uintptr_t GCPtr, uintptr_t* pGCPhys);  // NOVA FUNÃ‡ÃƒO!
 
 inline int (*PGMPhysRead_Orig)(void* pVM, uintptr_t GCPhys, void* pvBuf, size_t bufSize);
-inline BYTE PGMPhysRead_Backup[16] = {0};
 inline int PGMPhysReadHook(void* pVM, uintptr_t GCPhys, void* pvBuf, size_t bufSize) {
     VMM.pVM = pVM;
     return PGMPhysRead_Orig(pVM, GCPhys, pvBuf, bufSize);
@@ -779,11 +778,9 @@ inline void LoadLibraryAndHook() {
     PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
     PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
 
-    // Use MinHook to capture pVM, then immediately remove the hook
-    if (PGMPhysRead_Orig == nullptr && PGMPhysRead_Backup[0] == 0) {
+    // Use MinHook to capture pVM
+    if (PGMPhysRead_Orig == nullptr) {
         __try {
-            // Backup original bytes before hooking
-            memcpy(PGMPhysRead_Backup, PGMPhysRead, 16);
             MH_Initialize();
             MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
             MH_EnableHook(PGMPhysRead);
@@ -798,14 +795,5 @@ inline void LoadLibraryAndHook() {
     }
     if (VMM.pVM == nullptr) { diag_log("LoadLibraryAndHook: VMM.pVM timed out!"); return; }
     diag_log("LoadLibraryAndHook: VMM.pVM ready");
-
-    // Restore original PGMPhysRead bytes to remove MinHook trampoline overhead
-    if (PGMPhysRead_Backup[0] != 0) {
-        DWORD oldProt;
-        VirtualProtect((BYTE*)PGMPhysRead, 16, PAGE_EXECUTE_READWRITE, &oldProt);
-        memcpy((BYTE*)PGMPhysRead, PGMPhysRead_Backup, 16);
-        VirtualProtect((BYTE*)PGMPhysRead, 16, oldProt, &oldProt);
-        diag_log("LoadLibraryAndHook: hook removed");
-    }
     VMM.GuestCR3 = 1;
 }

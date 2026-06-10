@@ -1423,7 +1423,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
     if (fdwReason == DLL_PROCESS_ATTACH) {
         FILE* f = fopen("C:\\satella_dbg.txt", "w"); if (f) fclose(f);
         diag_log("DllMain: DLL_PROCESS_ATTACH");
-        diag_log("Version: NOTHREAD - inline Tick() only");
+        diag_log("Version: NOHOOKREMOVAL - keep hook active");
     }
     switch (fdwReason) {
     case DLL_PROCESS_ATTACH:
