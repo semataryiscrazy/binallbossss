@@ -30,5 +30,6 @@ extern std::atomic<uint64_t> renderMatrixGen;
 extern int cachedScreenW, cachedScreenH;
 extern uintptr_t cachedLocalPlayer;
 
+void EntityCacheTick();
 std::unordered_map<uintptr_t, EntityData>& GetEntityCache();
 std::mutex& GetCacheWriteMutex();

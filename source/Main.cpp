@@ -168,7 +168,6 @@ void DesenharESP(int width, int height) {
     espOffsetX = 0; espOffsetY = 0;
     SWidth = width; SHeight = height;
     if (!Auth.AtivarFuncoes || !Auth.Attached) return;
-    UpdateEntityCache();
 
     // Cache deve estar inicializado
     uint64_t matrixTs = renderMatrixTimestamp.load();
@@ -919,8 +918,9 @@ void runRenderTick() {
         SpinbotImpl::Execute(cachedLocalPlayer);
     }
 
-    // Aimbot features (inline, no threads)
+    // Entity cache + Aimbot features (inline, no threads)
     if (Auth.Attached) {
+        EntityCacheTick();
         _0xW3X4Y5Z6::Tick();
         _0xPrecision::Tick();
         LockAim::Tick();
@@ -1105,7 +1105,6 @@ void UnloadCheat() {
 
     __try { _0xW3X4Y5Z6::Stop(); } __except(1) {}
     __try { _0xPrecision::Stop(); } __except(1) {}
-    __try { StopEntityCache(); } __except(1) {}
     __try { LockAim::Stop(); } __except(1) {}
     __try { Exploit::NoRecoil::Stop(); } __except(1) {}
 
@@ -1123,9 +1122,7 @@ void ReInject() {
     Auth.OverlayView = true;
     Auth.MenuVisible = true;
     Auth.Attached = false;
-    StopEntityCache();
     Sleep(100);
-    UpdateEntityCache();
     std::thread(NetworkInit).detach();
     std::thread([]() {
         __try {
