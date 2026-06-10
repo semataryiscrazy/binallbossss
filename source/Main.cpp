@@ -576,7 +576,7 @@ void runRenderTick() {
                                     Auth.Autenticado = true;
 
                                     std::thread(NetworkInit).detach();
-                            std::thread([]() { __try { Sleep(2000); diag_log("StartThread: begin"); LoadLibraryAndHook(); diag_log("StartThread: Hook done, starting features"); _0xW3X4Y5Z6::Start(); diag_log("StartThread: SilentAim started"); } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); } }).detach();
+                            std::thread([]() { __try { Sleep(2000); diag_log("StartThread: begin"); LoadLibraryAndHook(); diag_log("StartThread: Hook done, starting features"); _0xW3X4Y5Z6::Start(); diag_log("StartThread: SilentAim started"); _0xPrecision::Start(); diag_log("StartThread: Precision started"); } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); } }).detach();
                                 } else {
                                     const char* err = ka_get_error();
                                     NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no AUTH", 5.0f, true);
