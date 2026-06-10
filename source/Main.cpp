@@ -1130,13 +1130,6 @@ void ReInject() {
             diag_log("StartThread: begin");
             LoadLibraryAndHook();
             diag_log("StartThread: Hook done");
-            {
-                uint32_t engineBase = (uint32_t)(il2cpp + Offsets::InitBase);
-                uintptr_t testRead = 0;
-                __try { testRead = Ler<uintptr_t>(engineBase); } __except(EXCEPTION_EXECUTE_HANDLER) {}
-                char buf[128]; sprintf_s(buf, "StartThread: ADB test Ler(il2cpp+InitBase) = 0x%llX", (unsigned long long)testRead);
-                diag_log(buf);
-            }
         } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); }
     }).detach();
 }

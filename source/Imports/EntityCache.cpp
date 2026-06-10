@@ -41,15 +41,25 @@ static uintptr_t GetEngine() {
     if (std::chrono::duration_cast<std::chrono::milliseconds>(now - engineTimer).count() > 500) {
         engineTimer = now;
         cachedGE = 0;
-        if (il2cpp < 0x10000) return 0;
+        if (il2cpp < 0x10000) { static bool once_il; if(!once_il){once_il=true;diag_log("GetEngine: il2cpp=0");} return 0; }
+        char b[128];
+        static bool once_il2; if(!once_il2){once_il2=true;sprintf_s(b,"GetEngine: il2cpp=0x%llX",(unsigned long long)il2cpp);diag_log(b);}
         uintptr_t base = Ler<uintptr_t>(il2cpp + Offsets::InitBase);
-        if (base != 0 && base > 0x10000) {
-            uintptr_t facade = Ler<uintptr_t>(base);
-            if (facade != 0 && facade > 0x10000) {
-                uintptr_t sf = Ler<uintptr_t>(facade + Offsets::StaticClass);
-                if (sf != 0 && sf > 0x10000) cachedGE = Ler<uintptr_t>(sf);
-            }
+        if (base < 0x10000) {
+            static bool once_base; if(!once_base){once_base=true;sprintf_s(b,"GetEngine: base=0 after Ler(0x%llX)",(unsigned long long)(il2cpp+Offsets::InitBase));diag_log(b);}
+            return 0;
         }
+        uintptr_t facade = Ler<uintptr_t>(base);
+        if (facade < 0x10000) {
+            static bool once_fac; if(!once_fac){once_fac=true;sprintf_s(b,"GetEngine: facade=0 after Ler(base=0x%llX)",(unsigned long long)base);diag_log(b);}
+            return 0;
+        }
+        uintptr_t sf = Ler<uintptr_t>(facade + Offsets::StaticClass);
+        if (sf < 0x10000) {
+            static bool once_sf; if(!once_sf){once_sf=true;sprintf_s(b,"GetEngine: sf=0 after Ler(facade+0x%llX)",(unsigned long long)(facade+Offsets::StaticClass));diag_log(b);}
+            return 0;
+        }
+        cachedGE = Ler<uintptr_t>(sf);
     }
     return cachedGE;
 }

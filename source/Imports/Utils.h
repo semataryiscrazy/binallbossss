@@ -714,9 +714,11 @@ T Ler(uint32_t virtualAddress) {
         g_vmmMutex.unlock();
         
         // Strategy 3: ADB fallback (slow but works)
+        diag_log("Ler: falling back to ADB");
         return LerAdb<T>(virtualAddress);
     } __except(EXCEPTION_EXECUTE_HANDLER) {
         g_vmmMutex.unlock();
+        diag_log("Ler: __except, falling back to ADB");
         return LerAdb<T>(virtualAddress);
     }
 }
