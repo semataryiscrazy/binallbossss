@@ -68,6 +68,7 @@ static std::thread cacheThread;
 static std::atomic<bool> cacheRunning{ false };
 
 static void CacheLoop() {
+    std::cout << "[CacheLoop] INICIO" << std::endl;
     JUNK(); JUNK_FALSE(); AntiDebugCheck();
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     if (ntdll) {
@@ -85,11 +86,13 @@ static void CacheLoop() {
         uintptr_t ge = GetEngine(); if (ge == 0) {
             failCount++;
             if (failCount > 60) { // ~3s sem engine = conexao perdida
+                std::cout << "[CacheLoop] failCount>60, Auth.Attached=false" << std::endl;
                 Auth.Attached = false;
                 failCount = 0;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue;
         }
+        if (failCount > 0) std::cout << "[CacheLoop] GetEngine OK! ge=" << std::hex << ge << std::endl;
         failCount = 0;
 
         // Atualiza camera matrix + copia atomica para render

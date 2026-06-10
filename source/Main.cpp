@@ -924,7 +924,9 @@ void runRenderTick() {
     ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
     ImGui::Begin("##ESPWindow", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus);
+    if (Auth.Attached) std::cout << "[Render] DesenharESP start, cachedLP=" << std::hex << cachedLocalPlayer << std::endl;
     DesenharESP(static_cast<int>(ImGui::GetIO().DisplaySize.x), static_cast<int>(ImGui::GetIO().DisplaySize.y));
+    if (Auth.Attached) std::cout << "[Render] DesenharESP end" << std::endl;
     ImGui::End();
 
     ImGui::EndFrame(); ImGui::Render();

@@ -617,7 +617,9 @@ inline void UnloadHooks() {
 }
 
 inline void LoadLibraryAndHook() {
+    std::cout << "[LoadLibrary] INICIO" << std::endl;
     HMODULE BstkVMM = GetModuleHandleA(AY_OBFUSCATE("BstkVMM.dll"));
+    std::cout << "[LoadLibrary] BstkVMM=" << (void*)BstkVMM << std::endl;
     if (BstkVMM != 0) {
         LPCSTR fn1 = AY_OBFUSCATE("VMMGetCpuById");
         LPCSTR fn2 = AY_OBFUSCATE("PGMPhysRead");
@@ -628,18 +630,20 @@ inline void LoadLibraryAndHook() {
         PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
         PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
 
-        MH_Initialize();
-        MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
-        MH_EnableHook(PGMPhysRead);
+        std::cout << "[LoadLibrary] MH_Initialize=" << MH_Initialize() << std::endl;
+        std::cout << "[LoadLibrary] MH_CreateHook=" << MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig) << std::endl;
+        std::cout << "[LoadLibrary] MH_EnableHook=" << MH_EnableHook(PGMPhysRead) << std::endl;
 
         int waitAttempts = 0;
         while (VMM.pVM == nullptr && waitAttempts < 500) {
             Sleep(10);
             waitAttempts++;
         }
+        std::cout << "[LoadLibrary] waitAttempts=" << waitAttempts << " VMM.pVM=" << (void*)VMM.pVM << std::endl;
         
-        if (VMM.pVM == nullptr) return;
+        if (VMM.pVM == nullptr) { std::cout << "[LoadLibrary] VMM.pVM==NULL, retornando" << std::endl; return; }
         VMM.GuestCR3 = 1;
+        std::cout << "[LoadLibrary] SUCESSO! GuestCR3 setado" << std::endl;
     }
 }
 
