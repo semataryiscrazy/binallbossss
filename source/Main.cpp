@@ -1416,6 +1416,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
     if (fdwReason == DLL_PROCESS_ATTACH) {
         FILE* f = fopen("C:\\satella_dbg.txt", "w"); if (f) fclose(f);
         diag_log("DllMain: DLL_PROCESS_ATTACH");
+        diag_log("Version: e256646 - Silent off, ESP skeleton+health, all Start()");
     }
     switch (fdwReason) {
     case DLL_PROCESS_ATTACH:
