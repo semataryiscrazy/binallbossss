@@ -22,10 +22,8 @@ namespace LockAim {
         static std::chrono::steady_clock::time_point kpt;
         static bool kp = false, dc = false;
         static uintptr_t ct = 0;
-        int iter = 0;
 
         while (g_running) {
-            if (++iter % 10 == 0) diag_log("LockAim: alive");
             __try {
             if (!Auth.Attached) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));

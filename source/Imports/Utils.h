@@ -440,8 +440,12 @@ inline int PGMPhysReadHook(void* pVM, uintptr_t GCPhys, void* pvBuf, size_t bufS
     return PGMPhysRead_Orig(pVM, GCPhys, pvBuf, bufSize);
 }
 
+// Global mutex to serialize all VMM access across threads
+inline std::recursive_mutex g_vmmMutex;
+
 template<typename T>
 T ReadPhysicalMemory(uintptr_t physicalAddress) {
+    std::lock_guard<std::recursive_mutex> lock(g_vmmMutex);
     T var = 0;
     void* pVM = VMM.pVM;
     if (pVM != NULL) {
@@ -454,6 +458,7 @@ T ReadPhysicalMemory(uintptr_t physicalAddress) {
 }
 
 inline uintptr_t EnderecoVirtualParaFisico64(uint64_t guestCR3, uint64_t virtualAddr) {
+    std::lock_guard<std::recursive_mutex> lock(g_vmmMutex);
     if (!VMM.pVM || !PGMPhysRead)
         return 0;
 
@@ -532,6 +537,7 @@ inline uintptr_t EnderecoVirtualParaFisico64(uint64_t guestCR3, uint64_t virtual
 }
 
 inline uintptr_t EnderecoVirtualParaFisico32(uint64_t guestCR3, uint32_t virtualAddr) {
+    std::lock_guard<std::recursive_mutex> lock(g_vmmMutex);
     constexpr uint32_t P_BIT = 1U << 0;
 
     if (!VMM.pVM || !PGMPhysRead)
@@ -619,6 +625,7 @@ inline uintptr_t TranslateVirtualToPhysical(uintptr_t va, uintptr_t cr3, uintptr
 
 template<typename T>
 T Ler(uint32_t virtualAddress) {
+    std::lock_guard<std::recursive_mutex> lock(g_vmmMutex);
     T var{};
     void* pVM = VMM.pVM;
     
@@ -642,6 +649,7 @@ T Ler(uint32_t virtualAddress) {
 
 template<typename T>
 void Escrever(uint32_t virtualAddress, T value) {
+    std::lock_guard<std::recursive_mutex> lock(g_vmmMutex);
     void* pVM = VMM.pVM;
     
     if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {

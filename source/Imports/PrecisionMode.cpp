@@ -31,9 +31,7 @@ namespace _0xPrecision {
     }
 
     static void Run() {
-        int iter = 0;
         while (running) {
-            if (++iter % 4 == 0) diag_log("Precision: alive");
             __try {
                 bool enabled = PrecisionMode;
                 uint32_t wd = 0;
