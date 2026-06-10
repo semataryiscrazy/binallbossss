@@ -1214,56 +1214,6 @@ static void ClearPEBDebugFlags() {
 }
 
 static void InitIdowImpl() {
-    // --- Anti-KG Injection Shield ---
-    { HANDLE hTok; if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &hTok)) {
-        TOKEN_PRIVILEGES tp; tp.PrivilegeCount = 1; tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-        LookupPrivilegeValueW(NULL, AY_OBFUSCATE(L"SeDebugPrivilege"), &tp.Privileges[0].Luid);
-        AdjustTokenPrivileges(hTok, FALSE, &tp, sizeof(tp), NULL, NULL); CloseHandle(hTok);
-    } }
-    
-    // --- EARLY ADVANCED EVASION (skip - crash no BlueStacks) ---
-    // AdvancedEvasion::InitializeAdvancedEvasion(g_hDll);
-    Sleep(10);
-
-    // --- MEMORY CHECK System (skip - crash no BlueStacks) ---
-    // MemoryIntegrity::InitializeIntegritySystem();
-    Sleep(5);
-    
-    // --- Early Kernel Evasion (skip - crash no BlueStacks) ---
-    // KernelEvasion::DisableETWTracing();
-    // KernelEvasion::ClearDebugOutput();
-    Sleep(5);
-    
-    static const wchar_t* guardProcs[] = {
-        AY_OBFUSCATE(L"g.fix"), AY_OBFUSCATE(L"g_fix"), AY_OBFUSCATE(L"SatellaGate"), AY_OBFUSCATE(L"Phantom"), AY_OBFUSCATE(L"Keller"), AY_OBFUSCATE(L"DFIRemv"), AY_OBFUSCATE(L"PiadaGuard")
-    };
-    static auto _CreateToolhelp32Snapshot_i = (decltype(&CreateToolhelp32Snapshot))GetProcAddress(GetModuleHandleA("kernel32.dll"), "CreateToolhelp32Snapshot");
-    static auto _Process32FirstW_i = (decltype(&Process32FirstW))GetProcAddress(GetModuleHandleA("kernel32.dll"), "Process32FirstW");
-    static auto _Process32NextW_i = (decltype(&Process32NextW))GetProcAddress(GetModuleHandleA("kernel32.dll"), "Process32NextW");
-    static auto _OpenProcess_i = (decltype(&OpenProcess))GetProcAddress(GetModuleHandleA("kernel32.dll"), "OpenProcess");
-    static auto _TerminateProcess_i = (decltype(&TerminateProcess))GetProcAddress(GetModuleHandleA("kernel32.dll"), "TerminateProcess");
-    HANDLE gs = _CreateToolhelp32Snapshot_i ? _CreateToolhelp32Snapshot_i(TH32CS_SNAPPROCESS, 0) : NULL;
-    if (_Process32FirstW_i && _Process32NextW_i && gs != INVALID_HANDLE_VALUE) {
-        PROCESSENTRY32W gp = { sizeof(gp) };
-        if (_Process32FirstW_i(gs, &gp)) do {
-            for (int gi = 0; gi < ARRAYSIZE(guardProcs); gi++) {
-                if (wcsstr(gp.szExeFile, guardProcs[gi])) {
-                    HANDLE hk = _OpenProcess_i ? _OpenProcess_i(PROCESS_TERMINATE, FALSE, gp.th32ProcessID) : NULL;
-                    if (hk) { if (_TerminateProcess_i) _TerminateProcess_i(hk, 0); CloseHandle(hk); }
-                    break;
-                }
-            }
-        } while (_Process32NextW_i(gs, &gp));
-        CloseHandle(gs);
-    }
-    StopKellerETW();
-    ClearPEBDebugFlags();
-    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
-    if (ntdll) {
-        typedef NTSTATUS(NTAPI *NtSIT)(HANDLE,ULONG,PVOID,ULONG);
-        NtSIT pNtSIT = (NtSIT)GetProcAddress(ntdll,"NtSetInformationThread");
-        if (pNtSIT) pNtSIT(GetCurrentThread(),0x11,NULL,0);
-    }
     InitializeConsole();
     JanelaAlvo = LookupWindowByClassName(AY_OBFUSCATE("BlueStacksApp"));
     if (!JanelaAlvo) {
