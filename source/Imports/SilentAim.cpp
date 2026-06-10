@@ -15,7 +15,9 @@ namespace _0xW3X4Y5Z6 {
     static std::atomic<uintptr_t> g_target{ 0 };
 
     static void RunImpl() {
+        int iter = 0;
         while (running) {
+            if (++iter % 20 == 0) diag_log("SilentAim: alive");
             if (!AimSilent) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(50));
                 continue;
