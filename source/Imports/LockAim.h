@@ -5,4 +5,5 @@ namespace LockAim {
     void Start();
     void Stop();
     void SetTarget(uintptr_t tg);
+    void Tick();
 }

@@ -1,5 +1,4 @@
 #include "PrecisionMode.h"
-#include <thread>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -12,10 +11,9 @@
 
 namespace _0xPrecision {
 
-    static std::atomic<bool> running{ false };
-    static std::thread thread;
     static bool wasActive = false;
     static uint32_t lastWd = 0;
+    static auto g_lastTick = std::chrono::steady_clock::now();
 
     static bool ValidatePtr(uint32_t addr) {
         return addr > 0x10000 && addr < 0x7FFFFFFF;
@@ -30,50 +28,37 @@ namespace _0xPrecision {
         return ValidatePtr(weaponData);
     }
 
-    static void Run() {
-        while (running) {
-            __try {
-                bool enabled = PrecisionMode;
-                uint32_t wd = 0;
-                if (!GetWeaponData(wd)) {
-                    wasActive = false;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    continue;
-                }
+    void Tick() {
+        auto now = std::chrono::steady_clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - g_lastTick).count();
+        if (ms < 250) return;
+        g_lastTick = now;
 
-                if (enabled && (!wasActive || wd != lastWd)) {
-                    Escrever<float>(wd + Offsets::WD_Damage, 55.0f);
-                    Escrever<float>(wd + Offsets::WD_FireInterval, 0.05f);
-                    Escrever<float>(wd + 0x10, 0.0f);
-                    Escrever<float>(wd + Offsets::WD_Range, 100.0f);
-                } else if (!enabled && wasActive) {
-                    if (wd == lastWd) {
-                        Escrever<float>(wd + Offsets::WD_Damage, 15.0f);
-                        Escrever<float>(wd + Offsets::WD_FireInterval, 0.12f);
-                        Escrever<float>(wd + 0x10, 0.0f);
-                        Escrever<float>(wd + Offsets::WD_Range, 10.0f);
-                    }
-                }
+        bool enabled = PrecisionMode;
+        uint32_t wd = 0;
+        if (!GetWeaponData(wd)) {
+            wasActive = false;
+            return;
+        }
 
-                wasActive = enabled;
-                lastWd = wd;
-                std::this_thread::sleep_for(std::chrono::milliseconds(250));
-
-            } __except(EXCEPTION_EXECUTE_HANDLER) {
-                continue;
+        if (enabled && (!wasActive || wd != lastWd)) {
+            Escrever<float>(wd + Offsets::WD_Damage, 55.0f);
+            Escrever<float>(wd + Offsets::WD_FireInterval, 0.05f);
+            Escrever<float>(wd + 0x10, 0.0f);
+            Escrever<float>(wd + Offsets::WD_Range, 100.0f);
+        } else if (!enabled && wasActive) {
+            if (wd == lastWd) {
+                Escrever<float>(wd + Offsets::WD_Damage, 15.0f);
+                Escrever<float>(wd + Offsets::WD_FireInterval, 0.12f);
+                Escrever<float>(wd + 0x10, 0.0f);
+                Escrever<float>(wd + Offsets::WD_Range, 10.0f);
             }
         }
+
+        wasActive = enabled;
+        lastWd = wd;
     }
 
-    void Start() {
-        if (running) return;
-        running = true;
-        thread = std::thread(Run);
-    }
-
-    void Stop() {
-        if (!running) return;
-        running = false;
-        if (thread.joinable()) thread.join();
-    }
+    void Start() {}
+    void Stop() {}
 }

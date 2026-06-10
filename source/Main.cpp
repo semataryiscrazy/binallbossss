@@ -501,7 +501,7 @@ void runRenderTick() {
                             Auth.Autenticado = true;
                             NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
                             std::thread(NetworkInit).detach();
-                            std::thread([]() { __try { Sleep(2000); diag_log("StartThread: begin"); LoadLibraryAndHook(); diag_log("StartThread: Hook done, starting features"); _0xW3X4Y5Z6::Start(); diag_log("StartThread: SilentAim started"); _0xPrecision::Start(); diag_log("StartThread: Precision started"); LockAim::Start(); diag_log("StartThread: LockAim started"); } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); } }).detach();
+                            std::thread([]() { __try { Sleep(2000); diag_log("StartThread: begin"); LoadLibraryAndHook(); diag_log("StartThread: Hook done"); } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); } }).detach();
                         } else {
                             memset(Auth.Usuario, 0, sizeof(Auth.Usuario));
                             memset(Auth.Senha, 0, sizeof(Auth.Senha));
@@ -576,7 +576,7 @@ void runRenderTick() {
                                     Auth.Autenticado = true;
 
                                     std::thread(NetworkInit).detach();
-                            std::thread([]() { __try { Sleep(2000); diag_log("StartThread: begin"); LoadLibraryAndHook(); diag_log("StartThread: Hook done, starting features"); _0xW3X4Y5Z6::Start(); diag_log("StartThread: SilentAim started"); _0xPrecision::Start(); diag_log("StartThread: Precision started"); LockAim::Start(); diag_log("StartThread: LockAim started"); } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); } }).detach();
+                            std::thread([]() { __try { Sleep(2000); diag_log("StartThread: begin"); LoadLibraryAndHook(); diag_log("StartThread: Hook done"); } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); } }).detach();
                                 } else {
                                     const char* err = ka_get_error();
                                     NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no AUTH", 5.0f, true);
@@ -917,6 +917,13 @@ void runRenderTick() {
     // Spinbot
     if (Auth.Attached && cachedLocalPlayer) {
         SpinbotImpl::Execute(cachedLocalPlayer);
+    }
+
+    // Aimbot features (inline, no threads)
+    if (Auth.Attached) {
+        _0xW3X4Y5Z6::Tick();
+        _0xPrecision::Tick();
+        LockAim::Tick();
     }
 
     // -- AimLock (target tracking) --
@@ -1416,7 +1423,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
     if (fdwReason == DLL_PROCESS_ATTACH) {
         FILE* f = fopen("C:\\satella_dbg.txt", "w"); if (f) fclose(f);
         diag_log("DllMain: DLL_PROCESS_ATTACH");
-        diag_log("Version: VMMMUTEX - serialized VMM access");
+        diag_log("Version: NOTHREAD - inline Tick() only");
     }
     switch (fdwReason) {
     case DLL_PROCESS_ATTACH:
