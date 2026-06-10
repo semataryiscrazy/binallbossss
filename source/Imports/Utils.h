@@ -598,24 +598,18 @@ inline uintptr_t EnderecoVirtualParaFisico32(uint64_t guestCR3, uint32_t virtual
 }
 
 inline uintptr_t TranslateVirtualToPhysical(uintptr_t va, uintptr_t cr3, uintptr_t& pa) {
-    // FORÃ‡AR modo 32 bits para Free Fire no BlueStacks
-    // O Free Fire sempre roda em 32 bits mesmo em emuladores x86_64
-    if (va < 0x100000000ULL) {
-        // EndereÃ§o virtual Ã© 32 bits, usar traduÃ§Ã£o 32 bits
-        pa = EnderecoVirtualParaFisico32(cr3, static_cast<uint32_t>(va));
-        return pa;
-    }
-    
-    // Fallback para 64 bits se o endereÃ§o for realmente 64 bits
+    // Usa o ABI detectado para escolher o formato de page table
     switch (VMM_ABI) {
     case ABIType::X86_64:
     case ABIType::ARM64:
+        // Long mode: 4-level page tables, mesmo para enderecos <4GB
         pa = EnderecoVirtualParaFisico64(cr3, va);
         return pa;
 
     case ABIType::X86:
     case ABIType::ARM32: {
-        pa = EnderecoVirtualParaFisico32(cr3, static_cast<uint32_t>(va));
+        // Protected mode: 2-level page tables
+        pa = EnderecoVirtualParaFisico32(static_cast<uint32_t>(cr3), static_cast<uint32_t>(va));
         return pa;
     }
 
@@ -660,7 +654,8 @@ T Ler(uint32_t virtualAddress) {
             
             // Strategy 2: Manual page table walk with available CR3
             if (PGMPhysRead != nullptr && VMM.GuestCR3 != 0) {
-                uintptr_t pa = EnderecoVirtualParaFisico32((uint32_t)VMM.GuestCR3, static_cast<uint32_t>(virtualAddress));
+                uintptr_t pa = 0;
+                TranslateVirtualToPhysical(virtualAddress, VMM.GuestCR3, pa);
                 if (pa != 0 && PGMPhysRead(pVM, pa, &var, sizeof(T)) == 0) {
                     g_vmmMutex.unlock();
                     return var;
@@ -710,7 +705,8 @@ void Escrever(uint32_t virtualAddress, T value) {
         
         // Fallback: manual page table walk
         if (pVM != nullptr && PGMPhysWrite != nullptr && VMM.GuestCR3 != 0) {
-            uintptr_t pa = EnderecoVirtualParaFisico32((uint32_t)VMM.GuestCR3, static_cast<uint32_t>(virtualAddress));
+            uintptr_t pa = 0;
+            TranslateVirtualToPhysical(virtualAddress, VMM.GuestCR3, pa);
             if (pa != 0) {
                 PGMPhysWrite(pVM, pa, &value, sizeof(T));
                 g_vmmMutex.unlock();
