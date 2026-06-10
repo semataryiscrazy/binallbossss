@@ -445,7 +445,6 @@ inline std::recursive_mutex g_vmmMutex;
 
 template<typename T>
 T ReadPhysicalMemory(uintptr_t physicalAddress) {
-    std::lock_guard<std::recursive_mutex> lock(g_vmmMutex);
     T var = 0;
     void* pVM = VMM.pVM;
     if (pVM != NULL) {
@@ -458,7 +457,6 @@ T ReadPhysicalMemory(uintptr_t physicalAddress) {
 }
 
 inline uintptr_t EnderecoVirtualParaFisico64(uint64_t guestCR3, uint64_t virtualAddr) {
-    std::lock_guard<std::recursive_mutex> lock(g_vmmMutex);
     if (!VMM.pVM || !PGMPhysRead)
         return 0;
 
@@ -537,7 +535,6 @@ inline uintptr_t EnderecoVirtualParaFisico64(uint64_t guestCR3, uint64_t virtual
 }
 
 inline uintptr_t EnderecoVirtualParaFisico32(uint64_t guestCR3, uint32_t virtualAddr) {
-    std::lock_guard<std::recursive_mutex> lock(g_vmmMutex);
     constexpr uint32_t P_BIT = 1U << 0;
 
     if (!VMM.pVM || !PGMPhysRead)
