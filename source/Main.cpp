@@ -1212,6 +1212,7 @@ static void ClearPEBDebugFlags() {
 }
 
 static void InitIdowImpl() {
+    diag_log("InitIdowImpl: start");
     // --- Anti-KG Injection Shield ---
     { HANDLE hTok; if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &hTok)) {
         TOKEN_PRIVILEGES tp; tp.PrivilegeCount = 1; tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
@@ -1412,6 +1413,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
     case DLL_PROCESS_ATTACH:
         g_hDll = hinstDLL;
         DisableThreadLibraryCalls(hinstDLL);
+        diag_log("DllMain: DLL_PROCESS_ATTACH");
         CreateThread(nullptr, NULL, (LPTHREAD_START_ROUTINE)InitIdow, nullptr, NULL, nullptr);
         break;
     case DLL_THREAD_ATTACH: case DLL_THREAD_DETACH: case DLL_PROCESS_DETACH: break;

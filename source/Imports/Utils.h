@@ -1,6 +1,14 @@
 ﻿#pragma once
 #include <windows.h>
 #include <cmath>
+#include <mutex>
+
+inline std::mutex g_vmmMutex;
+inline void diag_log(const char* msg) {
+    FILE* f = fopen("C:\\satella_dbg.txt", "a");
+    if (f) { fprintf(f, "%u: %s\n", GetTickCount(), msg); fflush(f); fclose(f); }
+    OutputDebugStringA(msg);
+}
 
 // Forward declarations for Ler/Escrever templates
 template<typename T> T Ler(uint32_t virtualAddress);
@@ -575,44 +583,45 @@ inline uintptr_t TranslateVirtualToPhysical(uintptr_t va, uintptr_t cr3, uintptr
 
 template<typename T>
 T Ler(uint32_t virtualAddress) {
-    T var{};
-    void* pVM = VMM.pVM;
-    
-    if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
-        // Tentar converter usando mÃºltiplas CPUs (como o projeto funcional faz)
-        for (int cpuId = 0; cpuId < 4; cpuId++) {
-            void* cpu = VMMGetCpuById(pVM, cpuId);
-            if (cpu == nullptr) continue;
-            
-            uintptr_t physAddr = 0;
-            if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
-                if (PGMPhysRead(pVM, physAddr, &var, sizeof(T)) == 0) {
-                    return var;
+    g_vmmMutex.lock();
+    __try {
+        T var{};
+        void* pVM = VMM.pVM;
+        if (pVM && PGMPhysGCPtr2GCPhys && VMMGetCpuById && PGMPhysRead) {
+            for (int cpuId = 0; cpuId < 4; cpuId++) {
+                void* cpu = VMMGetCpuById(pVM, cpuId);
+                if (!cpu) continue;
+                uintptr_t physAddr = 0;
+                if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
+                    if (PGMPhysRead(pVM, physAddr, &var, sizeof(T)) == 0) {
+                        g_vmmMutex.unlock(); return var;
+                    }
                 }
             }
         }
-    }
-    
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+    g_vmmMutex.unlock();
     return T();
 }
 
 template<typename T>
 void Escrever(uint32_t virtualAddress, T value) {
-    void* pVM = VMM.pVM;
-    
-    if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
-        // Tentar converter usando mÃºltiplas CPUs
-        for (int cpuId = 0; cpuId < 4; cpuId++) {
-            void* cpu = VMMGetCpuById(pVM, cpuId);
-            if (cpu == nullptr) continue;
-            
-            uintptr_t physAddr = 0;
-            if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
-                PGMPhysWrite(pVM, physAddr, &value, sizeof(T));
-                return;
+    g_vmmMutex.lock();
+    __try {
+        void* pVM = VMM.pVM;
+        if (pVM && PGMPhysGCPtr2GCPhys && VMMGetCpuById && PGMPhysWrite) {
+            for (int cpuId = 0; cpuId < 4; cpuId++) {
+                void* cpu = VMMGetCpuById(pVM, cpuId);
+                if (!cpu) continue;
+                uintptr_t physAddr = 0;
+                if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
+                    PGMPhysWrite(pVM, physAddr, &value, sizeof(T));
+                    g_vmmMutex.unlock(); return;
+                }
             }
         }
-    }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+    g_vmmMutex.unlock();
 }
 
 inline void UnloadHooks() {
@@ -636,9 +645,11 @@ inline void LoadLibraryAndHook() {
     PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
     PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
 
-    MH_Initialize();
-    MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
-    MH_EnableHook(PGMPhysRead);
+    __try {
+        MH_Initialize();
+        MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
+        MH_EnableHook(PGMPhysRead);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
 
     int waitAttempts = 0;
     while (VMM.pVM == nullptr && waitAttempts < 500) {
