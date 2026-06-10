@@ -745,12 +745,61 @@ inline void VMMFallbackScan() {
     }
 }
 
+static std::atomic<bool> g_vmmStarted{ false };
+
 inline void LoadLibraryAndHook() {
-    diag_log("LoadLibraryAndHook: VMM testing - load dll only, no hook");
-    LPCSTR dllName = AY_OBFUSCATE("BstkVMM.dll");
-    HMODULE BstkVMM = GetModuleHandleA(dllName);
-    if (BstkVMM == 0) {
-        BstkVMM = LoadLibraryA(dllName);
+    if (g_vmmStarted.exchange(true)) {
+        diag_log("LoadLibraryAndHook: already started, skipping");
+        return;
     }
-    diag_log("LoadLibraryAndHook: dll loaded, returning (no hook)");
+    diag_log("LoadLibraryAndHook: start");
+    LPCSTR dllName = AY_OBFUSCATE("BstkVMM.dll");
+    LPCSTR fn2 = AY_OBFUSCATE("PGMPhysRead");
+    LPCSTR fn3 = AY_OBFUSCATE("PGMPhysWrite");
+    LPCSTR fn4 = AY_OBFUSCATE("PGMPhysGCPtr2GCPhys");
+    LPCSTR fn1 = AY_OBFUSCATE("VMMGetCpuById");
+    HMODULE BstkVMM = GetModuleHandleA(dllName);
+    if (BstkVMM == 0) BstkVMM = LoadLibraryA(dllName);
+    if (BstkVMM == 0) { diag_log("LoadLibraryAndHook: BstkVMM not found"); return; }
+
+    diag_log("LoadLibraryAndHook: dll loaded");
+    VMMGetCpuById = (void* (*)(void*, int))GetProcAddress(BstkVMM, fn1);
+    PGMPhysRead = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn2);
+    PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
+    PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
+
+    // Manually hook PGMPhysRead: save first 14 bytes as trampoline, then JMP to our hook
+    BYTE* target = (BYTE*)PGMPhysRead;
+    if (PGMPhysRead_Orig == nullptr) {
+        // Allocate trampoline memory near the target (within 2GB for x64 RIP-relative JMP)
+        BYTE* tramp = (BYTE*)VirtualAlloc(NULL, 32, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+        if (tramp) {
+            // Copy original bytes
+            memcpy(tramp, target, 14);
+            // JMP from trampoline back to PGMPhysRead+14
+            // FF 25 xx xx xx xx (jmp [rip+offset]) + abs addr
+            tramp[14] = 0xFF; tramp[15] = 0x25; tramp[16] = 0x00; tramp[17] = 0x00; tramp[18] = 0x00; tramp[19] = 0x00;
+            *(uintptr_t*)(tramp + 20) = (uintptr_t)(target + 14);
+            PGMPhysRead_Orig = (decltype(PGMPhysRead_Orig))tramp;
+        }
+    }
+    // Patch target with JMP to our hook
+    BYTE jmpBuf[14];
+    memset(jmpBuf, 0x90, 14);  // NOP sled
+    jmpBuf[0] = 0xFF; jmpBuf[1] = 0x25; jmpBuf[2] = 0x00; jmpBuf[3] = 0x00; jmpBuf[4] = 0x00; jmpBuf[5] = 0x00;
+    *(uintptr_t*)(jmpBuf + 6) = (uintptr_t)PGMPhysReadHook;
+    DWORD oldProt;
+    VirtualProtect(target, 14, PAGE_EXECUTE_READWRITE, &oldProt);
+    memcpy(target, jmpBuf, 14);
+    VirtualProtect(target, 14, oldProt, &oldProt);
+
+    diag_log("LoadLibraryAndHook: hook installed, waiting for VMM.pVM");
+    int waitAttempts = 0;
+    while (VMM.pVM == nullptr && waitAttempts < 500) {
+        Sleep(10);
+        waitAttempts++;
+    }
+    if (VMM.pVM == nullptr) { diag_log("LoadLibraryAndHook: VMM.pVM timed out!"); return; }
+    diag_log("LoadLibraryAndHook: VMM.pVM ready");
+    VMM.GuestCR3 = 1;
 }
