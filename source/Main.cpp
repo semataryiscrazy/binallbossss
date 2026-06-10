@@ -1130,6 +1130,13 @@ void ReInject() {
             diag_log("StartThread: begin");
             LoadLibraryAndHook();
             diag_log("StartThread: Hook done");
+            {
+                uint32_t engineBase = (uint32_t)(il2cpp + Offsets::InitBase);
+                uintptr_t testRead = 0;
+                __try { testRead = Ler<uintptr_t>(engineBase); } __except(EXCEPTION_EXECUTE_HANDLER) {}
+                char buf[128]; sprintf_s(buf, "StartThread: ADB test Ler(il2cpp+InitBase) = 0x%llX", (unsigned long long)testRead);
+                diag_log(buf);
+            }
         } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); }
     }).detach();
 }
@@ -1420,7 +1427,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
     if (fdwReason == DLL_PROCESS_ATTACH) {
         FILE* f = fopen("C:\\satella_dbg.txt", "w"); if (f) fclose(f);
         diag_log("DllMain: DLL_PROCESS_ATTACH");
-        diag_log("Version: V12 - 64-bit page walk + VCPU scan for GuestCR3");
+        diag_log("Version: V13 - ADB fallback + diag logs");
     }
     switch (fdwReason) {
     case DLL_PROCESS_ATTACH:

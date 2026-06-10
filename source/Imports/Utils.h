@@ -629,20 +629,25 @@ inline bool AdbFetchPage(uint32_t pageBase) {
     
     if (g_adbPid.empty()) {
         std::string port = DetectPortFromNetstat();
+        diag_log("AdbFetchPage: port detected");
         std::string cmd = "-s " + port + " shell pidof com.dts.freefireth";
         g_adbPid = ShellReturn_Adb(cmd.c_str());
         g_adbPid.erase(g_adbPid.find_last_not_of(" \n\r\t") + 1);
-        if (g_adbPid.empty()) return false;
+        diag_log(("AdbFetchPage: pid='" + g_adbPid + "'").c_str());
+        if (g_adbPid.empty()) { diag_log("AdbFetchPage: FAIL - empty pid"); return false; }
     }
     
     char cmd[512];
-    sprintf_s(cmd, "-s %s exec-out shell /boot/android/android/system/xbin/bstk/su 0 busybox dd if=/proc/%s/mem bs=4096 skip=%u count=1 2>/dev/null | busybox xxd -p",
-        DetectPortFromNetstat().c_str(), g_adbPid.c_str(), pageBase / 4096);
+    std::string port2 = DetectPortFromNetstat();
+    sprintf_s(cmd, "-s %s exec-out su -c \"dd if=/proc/%s/mem bs=4096 skip=%u count=1 2>/dev/null\" | xxd -p",
+        port2.c_str(), g_adbPid.c_str(), pageBase / 4096);
     
+    diag_log(("AdbFetchPage: reading page=" + std::to_string(pageBase / 4096)).c_str());
     std::string output = ShellReturn_Adb(cmd);
-    if (output.empty()) return false;
+    if (output.empty()) { diag_log("AdbFetchPage: FAIL - empty output from adb"); return false; }
     
     output.erase(std::remove_if(output.begin(), output.end(), ::isspace), output.end());
+    if (output.size() < 4) { diag_log(("AdbFetchPage: FAIL - too short hex=" + output).c_str()); return false; }
     std::vector<uint8_t> page(4096, 0);
     size_t hexLen = output.size();
     for (size_t i = 0; i < 4096 && i * 2 + 1 < hexLen; i++) {
@@ -650,6 +655,7 @@ inline bool AdbFetchPage(uint32_t pageBase) {
         page[i] = (uint8_t)strtol(hexPair.c_str(), nullptr, 16);
     }
     g_adbCache[pageBase] = std::move(page);
+    diag_log(("AdbFetchPage: OK page=" + std::to_string(pageBase / 4096)).c_str());
     return true;
 }
 
