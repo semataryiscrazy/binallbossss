@@ -1,10 +1,14 @@
 ﻿#pragma once
+#include <functional>
+#include <sstream>
+#include <string>
 #include <windows.h>
+#include <shlwapi.h>
+#include <process.h>
 #include <cmath>
-
-// Forward declarations for Ler/Escrever templates
-template<typename T> T Ler(uint32_t virtualAddress);
-template<typename T> void Escrever(uint32_t virtualAddress, T value);
+#include "Cfg/strenc.h"
+#include "Cfg/encrypt.hh"
+#include "Cfg/minhook/MinHook.h"
 
 // Proccess
 inline uintptr_t il2cpp = 0x0;
@@ -173,32 +177,58 @@ inline std::string Shell_Return(const char* cmd) {
 
 
 inline void ShellQuiet_Adb(const char* cmd) {
-    std::string AdbPath = ObterLocalDeInstalacao(_getpid());
-    AdbPath += AY_OBFUSCATE("\\HD-Adb ");
-    AdbPath += cmd;
-    ShellQuiet(AdbPath.c_str());
+    std::string AdbPath = ObterLocalDeInstalacao(GetCurrentProcessId());
+    std::string fullCmd = "\"" + AdbPath + "\\HD-Adb\" " + cmd;
+    if (GetFileAttributesA((AdbPath + "\\HD-Adb.exe").c_str()) == INVALID_FILE_ATTRIBUTES) {
+        static const char* altPaths[] = {
+            "C:\\Program Files\\BlueStacks_nxt\\HD-Adb.exe",
+            "C:\\Program Files\\BlueStacks\\HD-Adb.exe"
+        };
+        for (auto& p : altPaths) {
+            if (GetFileAttributesA(p) != INVALID_FILE_ATTRIBUTES) {
+                std::string dir = p;
+                dir.erase(dir.rfind('\\'));
+                fullCmd = "\"" + dir + "\\HD-Adb\" " + cmd;
+                break;
+            }
+        }
+    }
+    ShellQuiet(fullCmd.c_str());
 }
 
 inline std::string ShellReturn_Adb(const char* cmd) {
-    std::string AdbPath = ObterLocalDeInstalacao(_getpid());
-    AdbPath = "\"" + AdbPath + "\\HD-Adb\" ";
-    AdbPath += cmd;
-    return Shell_Return(AdbPath.c_str());
+    std::string AdbPath = ObterLocalDeInstalacao(GetCurrentProcessId());
+    std::string fullCmd = "\"" + AdbPath + "\\HD-Adb\" " + cmd;
+    if (GetFileAttributesA((AdbPath + "\\HD-Adb.exe").c_str()) == INVALID_FILE_ATTRIBUTES) {
+        static const char* altPaths[] = {
+            "C:\\Program Files\\BlueStacks_nxt\\HD-Adb.exe",
+            "C:\\Program Files\\BlueStacks\\HD-Adb.exe"
+        };
+        for (auto& p : altPaths) {
+            if (GetFileAttributesA(p) != INVALID_FILE_ATTRIBUTES) {
+                std::string dir = p;
+                dir.erase(dir.rfind('\\'));
+                fullCmd = "\"" + dir + "\\HD-Adb\" " + cmd;
+                break;
+            }
+        }
+    }
+    return Shell_Return(fullCmd.c_str());
 }
 
 
 inline void ShellReturn_HDPlayer(const char* cmd) {
-    std::string AdbPath = ObterLocalDeInstalacao(_getpid());
-    AdbPath += AY_OBFUSCATE("\\HD-Player ");
+    std::string AdbPath = ObterLocalDeInstalacao(GetCurrentProcessId());
+    AdbPath += (const char*)AY_OBFUSCATE("\\HD-Player ");
     AdbPath += cmd;
     ShellQuiet(AdbPath.c_str());
 }
 
 inline std::string DetectPortFromNetstat() {
-    DWORD pid = _getpid();
+    DWORD pid = GetCurrentProcessId();
     std::string cmd = "cmd /c netstat -ano | findstr LISTENING";
     std::string output = Shell_Return(cmd.c_str());
-    if (output.empty()) return "";
+    if (output.empty()) return "127.0.0.1:5555";
 
     std::istringstream stream(output);
     std::string line;
@@ -237,7 +267,8 @@ inline std::string DetectPortFromNetstat() {
         }
     }
 
-    return fallback;
+    if (!fallback.empty()) return fallback;
+    return "127.0.0.1:5555";
 }
 
 inline ABIType DetectABIFromAndroid() {
@@ -291,6 +322,10 @@ inline bool ConnectEmulator() {
     return Conectado;
 }
 
+// ─── Forward declarations for Ler/Escrever ───
+template<typename T> T Ler(uint32_t virtualAddress);
+template<typename T> void Escrever(uint32_t virtualAddress, T value);
+
 // ─── AOB Scan & Patch ───
 struct AOBPattern {
     const uint8_t* search;
@@ -338,13 +373,13 @@ inline bool AOBApply(const AOBPattern& p, uintptr_t base, size_t libSize) {
 inline uintptr_t ObterEnderecoDaBiblioteca(const char* libName) {
 
     std::string pid;
-    pid += AY_OBFUSCATE("-s ") + DetectPortFromNetstat().c_str();
-    pid += AY_OBFUSCATE(" shell pidof com.dts.freefireth");
+    pid = (const char*)AY_OBFUSCATE("-s ") + DetectPortFromNetstat();
+    pid += (const char*)AY_OBFUSCATE(" shell pidof com.dts.freefireth");
     pid = ShellReturn_Adb(pid.c_str());
     pid.erase(pid.find_last_not_of(" \n\r\t") + 1);
 
     char command[256];
-    sprintf_s(command, AY_OBFUSCATE("-s %s shell /boot/android/android/system/xbin/bstk/su 0 busybox cat /proc/%s/maps"), DetectPortFromNetstat().c_str(), pid.c_str());
+    sprintf_s(command, (const char*)AY_OBFUSCATE("-s %s shell /boot/android/android/system/xbin/bstk/su 0 busybox cat /proc/%s/maps"), DetectPortFromNetstat().c_str(), pid.c_str());
 
     std::string output = ShellReturn_Adb(command);
 
@@ -379,7 +414,7 @@ inline uintptr_t ObterEnderecoDaBiblioteca(const char* libName) {
 inline struct {
     void* pVM = NULL;
     uint64_t GuestCR3 = 0;
-    uintptr_t PhysicalBase = 0;      // Base fÃ­sica do libil2cpp.so
+    uintptr_t PhysicalBase = 0;      // Base f�sica do libil2cpp.so
     uintptr_t VirtualBase = 0;       // Base virtual do libil2cpp.so
     bool UseDirectMapping = false;   // Se true, usa mapeamento direto
 } VMM;
@@ -623,13 +658,101 @@ inline void UnloadHooks() {
     MH_Uninitialize();
 }
 
+inline void VMMFallbackScan() {
+    if (il2cpp != 0) return;
+    if (VMM.pVM == nullptr) {
+        std::cout << "[VMMFallback] Waiting for VMM init..." << std::endl;
+        for (int i = 0; i < 100; i++) {
+            Sleep(100);
+            if (VMM.pVM != nullptr) break;
+        }
+    }
+    if (VMM.pVM == nullptr) {
+        std::cout << "[VMMFallback] VMM not available" << std::endl;
+        return;
+    }
+    if (!VMMGetCpuById || !PGMPhysGCPtr2GCPhys || !PGMPhysRead) {
+        std::cout << "[VMMFallback] VMM functions not available" << std::endl;
+        return;
+    }
+    void* cpu0 = VMMGetCpuById(VMM.pVM, 0);
+    if (cpu0 == nullptr) {
+        std::cout << "[VMMFallback] CPU 0 not available" << std::endl;
+        return;
+    }
+    
+    // Try each CPU until we find il2cpp
+    void* cpus[4] = { cpu0, nullptr, nullptr, nullptr };
+    for (int i = 1; i < 4; i++)
+        cpus[i] = VMMGetCpuById(VMM.pVM, i);
+    
+    std::cout << "[VMMFallback] Scanning guest virtual memory for libil2cpp..." << std::endl;
+    DWORD startTick = GetTickCount();
+    int scannedPages = 0;
+    for (int cpuIdx = 0; cpuIdx < 4; cpuIdx++) {
+        void* cpu = cpus[cpuIdx];
+        if (cpu == nullptr) continue;
+        if (il2cpp != 0) break;
+        
+        for (uintptr_t va = 0x60000000; va < 0x90000000; va += 0x1000) {
+            if (il2cpp != 0) break;
+            if (GetTickCount() - startTick > 15000) break;
+            
+            uintptr_t physAddr = 0;
+            if (PGMPhysGCPtr2GCPhys(cpu, va, &physAddr) != 0) continue;
+            scannedPages++;
+            
+            uint32_t magic = 0;
+            if (PGMPhysRead(VMM.pVM, physAddr, &magic, sizeof(magic)) != 0) continue;
+            if (magic == 0x464C457F) {
+                il2cpp = va;
+                libunity = va;
+                UnityCpp = va;
+                std::cout << "[VMMFallback] Found ELF at 0x" << std::hex << va << " (first hit, using as il2cpp)" << std::endl;
+                break;
+            }
+        }
+    }
+    if (il2cpp == 0) {
+        std::cout << "[VMMFallback] Primary scan failed (" << scannedPages << " pages, " << (GetTickCount() - startTick) << "ms). Trying secondary range 0x10000-0x5FFFFFF..." << std::endl;
+        void* cpu = cpus[0] ? cpus[0] : (cpus[1] ? cpus[1] : cpus[2]);
+        if (cpu) {
+            for (uintptr_t va = 0x10000; va < 0x60000000 && GetTickCount() - startTick < 25000; va += 0x1000) {
+                uintptr_t physAddr = 0;
+                if (PGMPhysGCPtr2GCPhys(cpu, va, &physAddr) != 0) continue;
+                scannedPages++;
+                uint32_t magic = 0;
+                if (PGMPhysRead(VMM.pVM, physAddr, &magic, sizeof(magic)) != 0) continue;
+                if (magic == 0x464C457F) {
+                    il2cpp = va;
+                    libunity = va;
+                    UnityCpp = va;
+                    std::cout << "[VMMFallback] Found ELF at 0x" << std::hex << va << " (secondary scan)" << std::endl;
+                    break;
+                }
+            }
+        }
+    }
+    if (il2cpp == 0) {
+        std::cout << "[VMMFallback] No ELF found after " << scannedPages << " mapped pages, " << (GetTickCount() - startTick) << "ms" << std::endl;
+    }
+}
+
 inline void LoadLibraryAndHook() {
-    HMODULE BstkVMM = GetModuleHandleA(AY_OBFUSCATE("BstkVMM.dll"));
+    LPCSTR dllName = AY_OBFUSCATE("BstkVMM.dll");
+    LPCSTR fn1 = AY_OBFUSCATE("VMMGetCpuById");
+    LPCSTR fn2 = AY_OBFUSCATE("PGMPhysRead");
+    LPCSTR fn3 = AY_OBFUSCATE("PGMPhysWrite");
+    LPCSTR fn4 = AY_OBFUSCATE("PGMPhysGCPtr2GCPhys");
+    HMODULE BstkVMM = GetModuleHandleA(dllName);
+    if (BstkVMM == 0) {
+        BstkVMM = LoadLibraryA(dllName);
+    }
     if (BstkVMM != 0) {
-        VMMGetCpuById = (void* (*)(void*, int))GetProcAddress(BstkVMM, static_cast<LPCSTR>(AY_OBFUSCATE("VMMGetCpuById")));
-        PGMPhysRead = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, static_cast<LPCSTR>(AY_OBFUSCATE("PGMPhysRead")));
-        PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, static_cast<LPCSTR>(AY_OBFUSCATE("PGMPhysWrite")));
-        PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, static_cast<LPCSTR>(AY_OBFUSCATE("PGMPhysGCPtr2GCPhys")));
+        VMMGetCpuById = (void* (*)(void*, int))GetProcAddress(BstkVMM, fn1);
+        PGMPhysRead = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn2);
+        PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
+        PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
 
         MH_Initialize();
         MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
@@ -648,4 +771,3 @@ inline void LoadLibraryAndHook() {
         VMM.GuestCR3 = 1;
     }
 }
-

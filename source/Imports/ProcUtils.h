@@ -1,6 +1,9 @@
-﻿#pragma once
-
+#pragma once
+#include "Offsets.h"
+#include "../Unity/Vector3.h"
 #include "UTF8.h"
+
+
 
 struct Vector4_2 {
     float X;
@@ -22,11 +25,11 @@ struct UnityMatrix {
     float _41, _42, _43, _44;
 };
 
-inline std::string ObterStr(uintptr_t address, int count) {
+std::string ObterStr(uintptr_t address, int count) {
     uintptr_t classname;
     int m = 0;
     char a[500];
-    UTF8 buf88[256] = "";
+    char buf88[256] = "";
     UTF16 buf16[34] = { 0 };
     uintptr_t hex[2] = { 0 };
     for (int i = 0; i < count; i++)
@@ -38,7 +41,7 @@ inline std::string ObterStr(uintptr_t address, int count) {
         buf16[m + 1] = static_cast<UTF16>(hex[0]);
         m += 2;
     }
-    Utf16_To_Utf8(buf16, buf88, sizeof(buf88), strictConversion);
+    Utf16_To_Utf8(buf16, reinterpret_cast<UTF8*>(buf88), sizeof(buf88), strictConversion);
     sprintf_s(a, "%s", buf88);
     return a;
 }
@@ -79,7 +82,7 @@ inline Vector3 Transform_ObterPosicao(uintptr_t Transform) {
     return ResultPosition;
 }
 
-inline void Transform_DefinirPosicao(uintptr_t Transform, Vector3 NovaPosicao) {
+void Transform_DefinirPosicao(uintptr_t Transform, Vector3 NovaPosicao) {
     uintptr_t TransformAcess = Ler<uintptr_t>(Transform + string2Offset(AY_OBFUSCATE("0x8")));
     int TransformIndex = Ler<int>(TransformAcess + string2Offset(AY_OBFUSCATE("0x24")));
     uintptr_t pTransformValues = Ler<uintptr_t>(Ler<uintptr_t>(TransformAcess + string2Offset(AY_OBFUSCATE("0x20"))) + string2Offset(AY_OBFUSCATE("0x18")));
@@ -87,7 +90,7 @@ inline void Transform_DefinirPosicao(uintptr_t Transform, Vector3 NovaPosicao) {
     Escrever<Vector3>(pTransformValues + offsetPosition, NovaPosicao);
 }
 
-inline auto GetPlayerPosition = [](uintptr_t player, int positionType) -> Vector3 {
+auto GetPlayerPosition = [](uintptr_t player, int positionType) -> Vector3 {
     if (positionType == 0) {
         uintptr_t m_CachedTransform = Ler<uintptr_t>(player + Offsets::MainTransform);
         if (m_CachedTransform == 0) return Vector3{ 0, 0, 0 };
@@ -107,7 +110,7 @@ inline auto GetPlayerPosition = [](uintptr_t player, int positionType) -> Vector
     return Vector3{ 0, 0, 0 };
     };
 
-inline Vector3 ObterOssos(uintptr_t Player, uintptr_t Position) {
+Vector3 ObterOssos(uintptr_t Player, uintptr_t Position) {
     uintptr_t ListTransform = Ler<uintptr_t>(Player + Offsets::AIDDOCAPFKA);
     if (ListTransform != string2Offset(AY_OBFUSCATE("0")))
     {
@@ -140,7 +143,7 @@ inline Vector3 ObterOssos(uintptr_t Player, uintptr_t Position) {
     return Vector3(0,0,0);
 }
 
-inline Vector3 GetBonePositionV2(uintptr_t player, uintptr_t boneOffset) {
+Vector3 GetBonePositionV2(uintptr_t player, uintptr_t boneOffset) {
     uintptr_t Location = Ler<uintptr_t>(player + boneOffset);
     if (Location == 0 || Location < 0x10000) return Vector3{0, 0, 0};
     uintptr_t H1 = Ler<uintptr_t>(Location + string2Offset(AY_OBFUSCATE("0x8")));
@@ -152,47 +155,59 @@ inline Vector3 GetBonePositionV2(uintptr_t player, uintptr_t boneOffset) {
     return Ler<Vector3>(H3 + string2Offset(AY_OBFUSCATE("0x60")));
 }
 
-inline Vector3 GetHeadPosition(uintptr_t Entidade) {
-    // EstratÃ©gia simplificada: tenta acessar a cabeÃ§a diretamente via bones
-    // Se falhar, retorna a posiÃ§Ã£o do corpo
-    
+Vector3 GetHeadPosition(uintptr_t Entidade) {
+    static uintptr_t posHead = 0;
+    bool Garota = Ler<bool>(Entidade + Offsets::CDOBMFNCJHD);
+    if (Garota) {
+        posHead = string2Offset(AY_OBFUSCATE("0x3C"));
+    }
+    else {
+        posHead = string2Offset(AY_OBFUSCATE("0x38"));
+    }
     uintptr_t ListTransform = Ler<uintptr_t>(Entidade + Offsets::AIDDOCAPFKA);
-    if (ListTransform > 0x10000) {
-        // Determina se Ã© personagem feminino (offset diferente)
-        bool Garota = Ler<bool>(Entidade + Offsets::CDOBMFNCJHD);
-        uintptr_t boneOffset = Garota ? string2Offset(AY_OBFUSCATE("0x3C")) : string2Offset(AY_OBFUSCATE("0x38"));
-        
+    if (ListTransform != string2Offset(AY_OBFUSCATE("0"))) {
         uintptr_t Transform = Ler<uintptr_t>(ListTransform + string2Offset(AY_OBFUSCATE("0x8")));
-        if (Transform > 0x10000) {
-            uintptr_t Location = Ler<uintptr_t>(Transform + boneOffset);
-            if (Location > 0x10000) {
+        if (Transform != string2Offset(AY_OBFUSCATE("0"))) {
+            uintptr_t Location = Ler<uintptr_t>(Transform + posHead);
+            if (Location != string2Offset(AY_OBFUSCATE("0"))) {
                 uintptr_t H1 = Ler<uintptr_t>(Location + string2Offset(AY_OBFUSCATE("0x8")));
-                if (H1 > 0x10000) {
+                if (H1 != string2Offset(AY_OBFUSCATE("0"))) {
                     uintptr_t H2 = Ler<uintptr_t>(H1 + string2Offset(AY_OBFUSCATE("0x28")));
-                    if (H2 > 0x10000) {
+                    if (H2 != string2Offset(AY_OBFUSCATE("0"))) {
                         uintptr_t H3 = Ler<uintptr_t>(H2 + string2Offset(AY_OBFUSCATE("0x14")));
-                        if (H3 > 0x10000) {
-                            Vector3 headPos = Ler<Vector3>(H3 + string2Offset(AY_OBFUSCATE("0x60")));
-                            if (headPos.X != 0 || headPos.Y != 0 || headPos.Z != 0) {
-                                return headPos;
+                        if (H3 != string2Offset(AY_OBFUSCATE("0"))) {
+                            uintptr_t H4 = H3 + string2Offset(AY_OBFUSCATE("0x60"));
+                            if (H4 != string2Offset(AY_OBFUSCATE("0"))) {
+                                return Ler<Vector3>(H4);
                             }
                         }
+                        else {
+                            return Transform_ObterPosicao(Ler<uintptr_t>(Ler<uintptr_t>(Entidade + Offsets::MainTransform) + string2Offset(AY_OBFUSCATE("0x8"))));
+                        }
+                    }
+                    else {
+                        return Transform_ObterPosicao(Ler<uintptr_t>(Ler<uintptr_t>(Entidade + Offsets::MainTransform) + string2Offset(AY_OBFUSCATE("0x8"))));
                     }
                 }
+                else {
+                    return Transform_ObterPosicao(Ler<uintptr_t>(Ler<uintptr_t>(Entidade + Offsets::MainTransform) + string2Offset(AY_OBFUSCATE("0x8"))));
+                }
+            }
+            else {
+                return Transform_ObterPosicao(Ler<uintptr_t>(Ler<uintptr_t>(Entidade + Offsets::MainTransform) + string2Offset(AY_OBFUSCATE("0x8"))));
             }
         }
+        else {
+            return Transform_ObterPosicao(Ler<uintptr_t>(Ler<uintptr_t>(Entidade + Offsets::MainTransform) + string2Offset(AY_OBFUSCATE("0x8"))));
+        }
     }
-    
-    // Fallback: retorna a posiÃ§Ã£o do corpo/main transform
-    uintptr_t mainTransform = Ler<uintptr_t>(Entidade + Offsets::MainTransform);
-    if (mainTransform > 0x10000) {
-        return Transform_ObterPosicao(mainTransform);
+    else {
+        return Transform_ObterPosicao(Ler<uintptr_t>(Ler<uintptr_t>(Entidade + Offsets::MainTransform) + string2Offset(AY_OBFUSCATE("0x8"))));
     }
-    
     return Vector3(0, 0, 0);
 }
 
-inline Vector3 World2Screen(struct UnityMatrix viewMatrix, struct Vector3 pos) {
+struct Vector3 World2Screen(struct UnityMatrix viewMatrix, struct Vector3 pos) {
     struct Vector3 screen;
     float screenW = (viewMatrix._14 * pos.X) + (viewMatrix._24 * pos.Y) + (viewMatrix._34 * pos.Z) + viewMatrix._44;
 
@@ -209,14 +224,14 @@ inline Vector3 World2Screen(struct UnityMatrix viewMatrix, struct Vector3 pos) {
     return screen;
 }
 
-inline bool isInsideFov(int x, int y) {
+bool isInsideFov(int x, int y) {
     int circle_x = SWidth / 2;
     int circle_y = SHeight / 2;
     int rad = 180 * 8;
     return (x - circle_x) * (x - circle_x) + (y - circle_y) * (y - circle_y) <= rad * rad;
 }
 
-inline void NetworkInit() {
+void NetworkInit() {
     std::cout << "[NetworkInit] Iniciando conexao com emulador..." << std::endl;
     if (ConnectEmulator()) {
         std::cout << "[NetworkInit] Emulador conectado! Procurando libs..." << std::endl;
@@ -236,10 +251,9 @@ inline void NetworkInit() {
             }
         }
         UnityCpp = libunity;
-        Auth.Attached = true;
         std::cout << "[NetworkInit] Attached = true" << std::endl;
     } else {
         std::cout << "[NetworkInit] ERRO: Falha ao conectar ao emulador!" << std::endl;
     }
+    Auth.Attached = true;
 }
-

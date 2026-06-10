@@ -1,21 +1,25 @@
 #pragma once
 #pragma warning(disable : 4244 4267 4018 4305 4309 4804 4365 4311 4312)
 #define IMGUI_DEFINE_MATH_OPERATORS
+// C++ standard headers FIRST (prevents C2894 in VS2022+WinSDK 10.0.26100)
+#include <iostream>
+#include <regex>
+#include <thread>
+#include <string>
+#include <vector>
+#include <functional>
+#include <sstream>
+#include <process.h>
+// Windows SDK headers after
 #include <d3d11.h>
 #include <tchar.h>
 #include <TlHelp32.h>
 #include <intrin.h>
 #include <windows.h>
 #include <wincrypt.h>
-#include <iostream>
 #include <shlwapi.h>
 #include <Wbemidl.h>
-#include <regex>
-#include <thread>
 #include <psapi.h>
-#include <string>
-#include <vector>
-#include <functional>
 #define CURL_STATICLIB
 #include <curl/curl.h>
 #include "imgui.h"
@@ -37,10 +41,10 @@
 #include "UTF8.h"
 #include "Offsets.h"
 #include "Cfg/minhook/MinHook.h"
-#include "Utils.h"
-#include "Process.h"
-#include "Cfg/seguranca.h"
 #include "../auth.h"
+#include "Cfg/seguranca.h"
+#include "Utils.h"
+#include "ProcUtils.h"
 #include "stb_image.h"
 #include "icon.h"
 #include "Functions.h"
