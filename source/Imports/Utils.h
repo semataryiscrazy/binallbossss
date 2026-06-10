@@ -10,6 +10,7 @@
 #include "Cfg/strenc.h"
 #include "Cfg/encrypt.hh"
 #include "Cfg/minhook/MinHook.h"
+#include "Cfg/minhook/hde/hde64.h"
 
 inline void diag_log(const char* msg) {
     FILE* f = fopen("C:\\satella_dbg.txt", "a");
@@ -768,30 +769,64 @@ inline void LoadLibraryAndHook() {
     PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
     PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
 
-    // Manually hook PGMPhysRead: save first 14 bytes as trampoline, then JMP to our hook
+    // Manually hook PGMPhysRead using hde64 to ensure instruction boundary alignment
     BYTE* target = (BYTE*)PGMPhysRead;
     if (PGMPhysRead_Orig == nullptr) {
-        // Allocate trampoline memory near the target (within 2GB for x64 RIP-relative JMP)
-        BYTE* tramp = (BYTE*)VirtualAlloc(NULL, 32, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+        // Disassemble to find instructions totalling >= 14 bytes (enough for JMP [rip+0] + 8 byte addr)
+        uint8_t hookLen = 0;
+        while (hookLen < 14) {
+            hde64s hs;
+            uint32_t len = hde64_disasm(target + hookLen, &hs);
+            if (len < 1) { hookLen = 14; break; }  // fallback
+            hookLen += len;
+        }
+        if (hookLen < 14) hookLen = 14;
+
+        // Allocate near target within 2GB range for JMP RIP-relative to work
+        BYTE* tramp = nullptr;
+        SYSTEM_INFO si; GetSystemInfo(&si);
+        for (int64_t delta = 0; delta < 0x7FFFFFFF; delta += (delta < 0x10000000) ? 0x100000 : 0x10000000) {
+            for (int sign = -1; sign <= 1; sign += 2) {
+                BYTE* guess = target + delta * sign;
+                if (guess < si.lpMinimumApplicationAddress || guess > si.lpMaximumApplicationAddress) continue;
+                tramp = (BYTE*)VirtualAlloc(guess, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+                if (tramp) goto tramp_alloced;
+            }
+        }
+        tramp_alloced:
+        if (!tramp) tramp = (BYTE*)VirtualAlloc(NULL, 32, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+
         if (tramp) {
-            // Copy original bytes
-            memcpy(tramp, target, 14);
-            // JMP from trampoline back to PGMPhysRead+14
-            // FF 25 xx xx xx xx (jmp [rip+offset]) + abs addr
-            tramp[14] = 0xFF; tramp[15] = 0x25; tramp[16] = 0x00; tramp[17] = 0x00; tramp[18] = 0x00; tramp[19] = 0x00;
-            *(uintptr_t*)(tramp + 20) = (uintptr_t)(target + 14);
+            // Copy original instruction bytes
+            memcpy(tramp, target, hookLen);
+            // JMP from trampoline back to target+hookLen using absolute address
+            tramp[hookLen] = 0xFF; tramp[hookLen+1] = 0x25;
+            *(uint32_t*)(tramp + hookLen + 2) = 0;  // jmp [rip+0]
+            *(uintptr_t*)(tramp + hookLen + 6) = (uintptr_t)(target + hookLen);
             PGMPhysRead_Orig = (decltype(PGMPhysRead_Orig))tramp;
         }
     }
+
+    // Re-disassemble to find correct hook length (in case PGMPhysRead_Orig was already set)
+    uint8_t hookLen = 0;
+    while (hookLen < 14) {
+        hde64s hs;
+        uint32_t len = hde64_disasm(target + hookLen, &hs);
+        if (len < 1) { hookLen = 14; break; }
+        hookLen += len;
+    }
+    if (hookLen < 14) hookLen = 14;
+
     // Patch target with JMP to our hook
-    BYTE jmpBuf[14];
-    memset(jmpBuf, 0x90, 14);  // NOP sled
-    jmpBuf[0] = 0xFF; jmpBuf[1] = 0x25; jmpBuf[2] = 0x00; jmpBuf[3] = 0x00; jmpBuf[4] = 0x00; jmpBuf[5] = 0x00;
+    BYTE* jmpBuf = (BYTE*)alloca(hookLen);
+    memset(jmpBuf, 0x90, hookLen);
+    jmpBuf[0] = 0xFF; jmpBuf[1] = 0x25;
+    *(uint32_t*)(jmpBuf + 2) = 0;  // jmp [rip+0]
     *(uintptr_t*)(jmpBuf + 6) = (uintptr_t)PGMPhysReadHook;
     DWORD oldProt;
-    VirtualProtect(target, 14, PAGE_EXECUTE_READWRITE, &oldProt);
-    memcpy(target, jmpBuf, 14);
-    VirtualProtect(target, 14, oldProt, &oldProt);
+    VirtualProtect(target, hookLen, PAGE_EXECUTE_READWRITE, &oldProt);
+    memcpy(target, jmpBuf, hookLen);
+    VirtualProtect(target, hookLen, oldProt, &oldProt);
 
     diag_log("LoadLibraryAndHook: hook installed, waiting for VMM.pVM");
     int waitAttempts = 0;
