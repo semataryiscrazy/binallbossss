@@ -995,6 +995,7 @@ static void deep_clean_internal() {
 }
 
 static void RenderLoop() {
+    diag_log("RenderLoop: started");
     __try {
         using namespace std::chrono;
         auto lastRender = steady_clock::now();
@@ -1008,7 +1009,9 @@ static void RenderLoop() {
             }
             Sleep(PerformanceMode ? 5 : 1);
         }
+        diag_log("RenderLoop: exiting normally");
     } __except(EXCEPTION_EXECUTE_HANDLER) {
+        diag_log("RenderLoop: __except caught crash");
     }
 }
 
@@ -1214,6 +1217,7 @@ static void ClearPEBDebugFlags() {
 }
 
 static void InitIdowImpl() {
+    diag_log("InitIdowImpl: start");
     // --- Anti-KG Injection Shield ---
     { HANDLE hTok; if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &hTok)) {
         TOKEN_PRIVILEGES tp; tp.PrivilegeCount = 1; tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
@@ -1410,6 +1414,10 @@ void InitIdow() {
 #include "Imports/PrecisionMode.cpp"
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
+    if (fdwReason == DLL_PROCESS_ATTACH) {
+        FILE* f = fopen("C:\\satella_dbg.txt", "w"); if (f) fclose(f);
+        diag_log("DllMain: DLL_PROCESS_ATTACH");
+    }
     switch (fdwReason) {
     case DLL_PROCESS_ATTACH:
         g_hDll = hinstDLL;

@@ -6,9 +6,16 @@
 #include <shlwapi.h>
 #include <process.h>
 #include <cmath>
+#include <cstdio>
 #include "Cfg/strenc.h"
 #include "Cfg/encrypt.hh"
 #include "Cfg/minhook/MinHook.h"
+
+inline void diag_log(const char* msg) {
+    FILE* f = fopen("C:\\satella_dbg.txt", "a");
+    if (f) { fprintf(f, "%u: %s\n", GetTickCount(), msg); fclose(f); }
+    OutputDebugStringA(msg);
+}
 
 // Proccess
 inline uintptr_t il2cpp = 0x0;
@@ -739,39 +746,51 @@ inline void VMMFallbackScan() {
 }
 
 inline void LoadLibraryAndHook() {
+    diag_log("LoadLibraryAndHook: start");
     LPCSTR dllName = AY_OBFUSCATE("BstkVMM.dll");
     LPCSTR fn1 = AY_OBFUSCATE("VMMGetCpuById");
     LPCSTR fn2 = AY_OBFUSCATE("PGMPhysRead");
     LPCSTR fn3 = AY_OBFUSCATE("PGMPhysWrite");
     LPCSTR fn4 = AY_OBFUSCATE("PGMPhysGCPtr2GCPhys");
     HMODULE BstkVMM = GetModuleHandleA(dllName);
+    diag_log("LoadLibraryAndHook: got module handle");
     if (BstkVMM == 0) {
+        diag_log("LoadLibraryAndHook: loading BstkVMM.dll");
         BstkVMM = LoadLibraryA(dllName);
+        diag_log("LoadLibraryAndHook: LoadLibrary done");
     }
     if (BstkVMM != 0) {
+        diag_log("LoadLibraryAndHook: BstkVMM loaded, getting procs");
         VMMGetCpuById = (void* (*)(void*, int))GetProcAddress(BstkVMM, fn1);
         PGMPhysRead = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn2);
         PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
         PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
+        diag_log("LoadLibraryAndHook: GetProcAddress done");
 
         if (PGMPhysRead != nullptr) {
+            diag_log("LoadLibraryAndHook: enabling MinHook");
             __try {
                 MH_Initialize();
                 MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
                 MH_EnableHook(PGMPhysRead);
-            } __except(EXCEPTION_EXECUTE_HANDLER) {}
+                diag_log("LoadLibraryAndHook: MinHook enabled");
+            } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("LoadLibraryAndHook: MinHook exception"); }
+        } else {
+            diag_log("LoadLibraryAndHook: PGMPhysRead is NULL!");
         }
 
         int waitAttempts = 0;
+        diag_log("LoadLibraryAndHook: waiting for VMM.pVM");
         while (VMM.pVM == nullptr && waitAttempts < 500) {
             Sleep(10);
             waitAttempts++;
         }
         
         if (VMM.pVM == nullptr) {
+            diag_log("LoadLibraryAndHook: VMM.pVM timed out!");
             return;
         }
-        
+        diag_log("LoadLibraryAndHook: VMM.pVM ready");
         VMM.GuestCR3 = 1;
     }
 }

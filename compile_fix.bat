@@ -1,6 +1,6 @@
 @echo off
 call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
-cl /LD /EHsc /Fe:server\Satella.dll /MD /nologo /W3 /D_CRT_SECURE_NO_WARNINGS /GS /Od /std:c++17 /RTC1 ^
+cl /LD /EHsc /Fe:server\Satella.dll /MD /nologo /W3 /D_CRT_SECURE_NO_WARNINGS /Oy- /GS- /O2 /std:c++17 ^
     source\Main.cpp ^
     source\Cfg\encrypt.cpp ^
     source\Cfg\Discord\Discord.cpp ^
