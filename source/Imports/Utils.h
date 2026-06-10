@@ -862,6 +862,14 @@ inline void VMMFallbackScan() {
 
 static std::atomic<bool> g_vmmStarted{ false };
 
+inline void InstallHook() {
+    __try {
+        MH_Initialize();
+        MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
+        MH_EnableHook(PGMPhysRead);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+}
+
 inline void LoadLibraryAndHook() {
     if (g_vmmStarted.exchange(true)) {
         diag_log("LoadLibraryAndHook: already started, skipping");
@@ -885,13 +893,7 @@ inline void LoadLibraryAndHook() {
     CPUMGetGuestCR3 = (uint64_t (*)(void*))GetProcAddress(BstkVMM, "CPUMGetGuestCR3");
 
     // Use MinHook to capture pVM
-    if (PGMPhysRead_Orig == nullptr) {
-        __try {
-            MH_Initialize();
-            MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
-            MH_EnableHook(PGMPhysRead);
-        } __except(EXCEPTION_EXECUTE_HANDLER) {}
-    }
+    InstallHook();
 
     diag_log("LoadLibraryAndHook: hook installed, waiting for VMM.pVM");
     int waitAttempts = 0;
@@ -934,5 +936,38 @@ inline void LoadLibraryAndHook() {
         diag_log("LoadLibraryAndHook: GuestCR3 fallback to 1");
     } else {
         char gcr3buf[128]; sprintf_s(gcr3buf, "LoadLibraryAndHook: GuestCR3 = %llu", VMM.GuestCR3); diag_log(gcr3buf);
+    }
+
+    // Discover il2cpp base
+    if (il2cpp == 0) {
+        VMMFallbackScan();
+    }
+    if (il2cpp > 0x10000) {
+        char ibuf[128]; sprintf_s(ibuf, "LoadLibraryAndHook: il2cpp = 0x%llX", (unsigned long long)il2cpp); diag_log(ibuf);
+    } else {
+        diag_log("LoadLibraryAndHook: VMMFallbackScan failed to find il2cpp");
+        // Try ADB-based /proc/pid/maps (no __try, avoid C2712)
+        char portBuf[64] = {0};
+        strcpy_s(portBuf, DetectPortFromNetstat().c_str());
+        char pidCmd[256]; sprintf_s(pidCmd, "-s %s shell pidof com.dts.freefireth", portBuf);
+        std::string pidStr = ShellReturn_Adb(pidCmd); // outside __try
+        if (!pidStr.empty()) {
+            pidStr.erase(pidStr.find_last_not_of(" \n\r\t") + 1);
+            char mapsCmd[512]; sprintf_s(mapsCmd, "-s %s exec-out su -c \"cat /proc/%s/maps\" 2>/dev/null", portBuf, pidStr.c_str());
+            std::string mapsStr = ShellReturn_Adb(mapsCmd); // outside __try
+            if (!mapsStr.empty()) {
+                size_t pos = mapsStr.find("libil2cpp");
+                if (pos != std::string::npos) {
+                    size_t lineStart = mapsStr.rfind('\n', pos);
+                    if (lineStart == std::string::npos) lineStart = 0; else lineStart++;
+                    size_t hexEnd = mapsStr.find('-', lineStart);
+                    if (hexEnd != std::string::npos) {
+                        std::string hexStr = mapsStr.substr(lineStart, hexEnd - lineStart);
+                        il2cpp = strtoull(hexStr.c_str(), nullptr, 16);
+                        char ibuf[128]; sprintf_s(ibuf, "LoadLibraryAndHook: il2cpp from ADB maps = 0x%llX", (unsigned long long)il2cpp); diag_log(ibuf);
+                    }
+                } else { diag_log("LoadLibraryAndHook: libil2cpp not in maps"); }
+            } else { diag_log("LoadLibraryAndHook: ADB maps empty"); }
+        } else { diag_log("LoadLibraryAndHook: ADB pid empty"); }
     }
 }
