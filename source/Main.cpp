@@ -941,9 +941,9 @@ void InitializeConsole() {
     std::cout.clear(); std::cerr.clear();
     setvbuf(stdout, NULL, _IONBF, 0);
     SetConsoleOutputCP(CP_UTF8); SetConsoleCP(CP_UTF8);
-    // Esconde a janela do console para nao atrapalhar o overlay
+    // Mostra console para debug
     HWND hConsole = GetConsoleWindow();
-    if (hConsole) ShowWindow(hConsole, SW_HIDE);
+    if (hConsole) ShowWindow(hConsole, SW_SHOW);
 }
 
 static DWORD RunCmdSync(const char* cmd) {
@@ -1387,19 +1387,34 @@ static void InitIdowImpl() {
     if (hMod) FreeLibraryAndExitThread(hMod, 0);
 }
 
+static void LogCrash(const char* context, EXCEPTION_POINTERS* ep = nullptr) {
+    wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
+    wcscat_s(tmp, L"satella_crash.txt");
+    HANDLE hCrash = CreateFileW(tmp, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
+    if (hCrash != INVALID_HANDLE_VALUE) {
+        SetFilePointer(hCrash, 0, NULL, FILE_END);
+        char buf[256];
+        if (ep) {
+            sprintf_s(buf, "[%s] Exception: 0x%08X at 0x%p\n", context, ep->ExceptionRecord->ExceptionCode, ep->ExceptionRecord->ExceptionAddress);
+        } else {
+            sprintf_s(buf, "[%s] crash\n", context);
+        }
+        DWORD w; WriteFile(hCrash, buf, (DWORD)strlen(buf), &w, NULL);
+        CloseHandle(hCrash);
+    }
+}
+
+static LONG WINAPI VectoredHandler(EXCEPTION_POINTERS* ep) {
+    LogCrash("VEH", ep);
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 void InitIdow() {
+    AddVectoredExceptionHandler(1, VectoredHandler);
     __try {
         InitIdowImpl();
     } __except(EXCEPTION_EXECUTE_HANDLER) {
-        wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
-        wcscat_s(tmp, L"satella_crash.txt");
-        HANDLE hCrash = CreateFileW(tmp, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
-        if (hCrash != INVALID_HANDLE_VALUE) {
-            SetFilePointer(hCrash, 0, NULL, FILE_END);
-            static const char* msg = "InitIdow crash\n";
-            DWORD w; WriteFile(hCrash, msg, (DWORD)strlen(msg), &w, NULL);
-            CloseHandle(hCrash);
-        }
+        LogCrash("InitIdow");
     }
 }
 
