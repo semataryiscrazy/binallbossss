@@ -930,18 +930,17 @@ void InitIdow() {
         AdjustTokenPrivileges(hTok, FALSE, &tp, sizeof(tp), NULL, NULL); CloseHandle(hTok);
     } }
     
-    // --- EARLY ADVANCED EVASION (Before any suspicious activity) ---
-    AdvancedEvasion::InitializeAdvancedEvasion(g_hDll);  // HWID spoof, signature obfuscation, code bloat
+    // --- EARLY ADVANCED EVASION (skip - crash no BlueStacks) ---
+    // AdvancedEvasion::InitializeAdvancedEvasion(g_hDll);
     Sleep(10);
 
-    // --- MEMORY CHECK System ---
-    MemoryIntegrity::InitializeIntegritySystem();  // REG critical functions for monitoring
+    // --- MEMORY CHECK System (skip - crash no BlueStacks) ---
+    // MemoryIntegrity::InitializeIntegritySystem();
     Sleep(5);
     
-    // --- Early Kernel Evasion ---
-    // Disable logging IMMEDIATELY after DLL load
-    KernelEvasion::DisableETWTracing();      // Stop ETW tracing
-    KernelEvasion::ClearDebugOutput();       // Disable debug output
+    // --- Early Kernel Evasion (skip - crash no BlueStacks) ---
+    // KernelEvasion::DisableETWTracing();
+    // KernelEvasion::ClearDebugOutput();
     Sleep(5);
     
     static const wchar_t* guardProcs[] = {
