@@ -251,9 +251,9 @@ void NetworkInit() {
             }
         }
         UnityCpp = libunity;
+        Auth.Attached = true;
         std::cout << "[NetworkInit] Attached = true" << std::endl;
     } else {
         std::cout << "[NetworkInit] ERRO: Falha ao conectar ao emulador!" << std::endl;
     }
-    Auth.Attached = true;
 }

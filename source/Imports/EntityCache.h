@@ -1,6 +1,6 @@
 #pragma once
 #include "../Unity/Vector3.h"
-#include "Process.h"
+#include "ProcUtils.h"
 #include <string>
 #include <cstdint>
 #include <unordered_map>
@@ -30,6 +30,5 @@ extern std::atomic<uint64_t> renderMatrixGen;
 extern int cachedScreenW, cachedScreenH;
 extern uintptr_t cachedLocalPlayer;
 
-void EntityCacheTick();
 std::unordered_map<uintptr_t, EntityData>& GetEntityCache();
 std::mutex& GetCacheWriteMutex();

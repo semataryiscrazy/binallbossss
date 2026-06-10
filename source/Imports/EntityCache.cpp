@@ -1,7 +1,7 @@
 #include "EntityCache.h"
 #include "Offsets.h"
 #include "Utils.h"
-#include "Process.h"
+#include "ProcUtils.h"
 #include "Scope.h"
 #include "../Unity/Vector3.h"
 #include <mutex>

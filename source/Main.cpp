@@ -941,9 +941,9 @@ void InitializeConsole() {
     std::cout.clear(); std::cerr.clear();
     setvbuf(stdout, NULL, _IONBF, 0);
     SetConsoleOutputCP(CP_UTF8); SetConsoleCP(CP_UTF8);
-    // Mostra console para debug
+    // Esconde a janela do console para nao atrapalhar o overlay
     HWND hConsole = GetConsoleWindow();
-    if (hConsole) ShowWindow(hConsole, SW_SHOW);
+    if (hConsole) ShowWindow(hConsole, SW_HIDE);
 }
 
 static DWORD RunCmdSync(const char* cmd) {
