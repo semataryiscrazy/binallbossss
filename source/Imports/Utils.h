@@ -644,6 +644,16 @@ T Ler(uint32_t virtualAddress) {
                 }
             }
         }
+        
+        // Fallback: manual page table walk
+        if (pVM != nullptr && PGMPhysRead != nullptr && VMM.GuestCR3 != 0 && VMM.GuestCR3 != 1) {
+            uintptr_t pa = EnderecoVirtualParaFisico32(VMM.GuestCR3, static_cast<uint32_t>(virtualAddress));
+            if (pa != 0 && PGMPhysRead(pVM, pa, &var, sizeof(T)) == 0) {
+                g_vmmMutex.unlock();
+                return var;
+            }
+        }
+        
         g_vmmMutex.unlock();
         return T();
     } __except(EXCEPTION_EXECUTE_HANDLER) {
@@ -671,6 +681,17 @@ void Escrever(uint32_t virtualAddress, T value) {
                 }
             }
         }
+        
+        // Fallback: manual page table walk
+        if (pVM != nullptr && PGMPhysWrite != nullptr && VMM.GuestCR3 != 0 && VMM.GuestCR3 != 1) {
+            uintptr_t pa = EnderecoVirtualParaFisico32(VMM.GuestCR3, static_cast<uint32_t>(virtualAddress));
+            if (pa != 0) {
+                PGMPhysWrite(pVM, pa, &value, sizeof(T));
+                g_vmmMutex.unlock();
+                return;
+            }
+        }
+        
         g_vmmMutex.unlock();
     } __except(EXCEPTION_EXECUTE_HANDLER) {
         g_vmmMutex.unlock();
@@ -787,6 +808,7 @@ inline void LoadLibraryAndHook() {
     PGMPhysRead = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn2);
     PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
     PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
+    CPUMGetGuestCR3 = (uint64_t (*)(void*))GetProcAddress(BstkVMM, "CPUMGetGuestCR3");
 
     // Use MinHook to capture pVM
     if (PGMPhysRead_Orig == nullptr) {
@@ -805,5 +827,13 @@ inline void LoadLibraryAndHook() {
     }
     if (VMM.pVM == nullptr) { diag_log("LoadLibraryAndHook: VMM.pVM timed out!"); return; }
     diag_log("LoadLibraryAndHook: VMM.pVM ready");
-    VMM.GuestCR3 = 1;
+
+    // Get real GuestCR3 from VMM
+    if (CPUMGetGuestCR3 != nullptr) {
+        void* cpu0 = VMMGetCpuById ? VMMGetCpuById(VMM.pVM, 0) : nullptr;
+        if (cpu0 != nullptr) {
+            VMM.GuestCR3 = CPUMGetGuestCR3(cpu0);
+        }
+    }
+    if (VMM.GuestCR3 == 0) VMM.GuestCR3 = 1;
 }

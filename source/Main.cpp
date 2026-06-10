@@ -1423,7 +1423,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
     if (fdwReason == DLL_PROCESS_ATTACH) {
         FILE* f = fopen("C:\\satella_dbg.txt", "w"); if (f) fclose(f);
         diag_log("DllMain: DLL_PROCESS_ATTACH");
-        diag_log("Version: V7 - CacheLoop SEH translator + /EHa");
+        diag_log("Version: V8 - fallback manual page walk + real GuestCR3");
     }
     switch (fdwReason) {
     case DLL_PROCESS_ATTACH:
