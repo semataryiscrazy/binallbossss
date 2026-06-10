@@ -432,11 +432,15 @@ inline void* (*VMMGetCpuById)(void* pVM, int idCpu);
 inline int (*PGMPhysRead)(void* pVM, uintptr_t GCPhys, void* pvBuf, size_t bufSize);
 inline int (*PGMPhysWrite)(void* pVM, uintptr_t GCPhys, void* pvBuf, size_t bufSize);
 inline uint64_t(*CPUMGetGuestCR3)(void* pVCpu);
-inline int (*PGMPhysGCPtr2GCPhys)(void* pVCpu, uintptr_t GCPtr, uintptr_t* pGCPhys);  // NOVA FUNÃ‡ÃƒO!
+inline int (*PGMPhysGCPtr2GCPhys)(void* pVM, uintptr_t GCPtr, uintptr_t* pGCPhys);  // PVM ou PVCpu
 
 inline int (*PGMPhysRead_Orig)(void* pVM, uintptr_t GCPhys, void* pvBuf, size_t bufSize);
+inline std::atomic<int> g_hookCallCount{ 0 };
 inline int PGMPhysReadHook(void* pVM, uintptr_t GCPhys, void* pvBuf, size_t bufSize) {
-    VMM.pVM = pVM;
+    if (g_hookCallCount++ == 0) {
+        VMM.pVM = pVM;
+        diag_log("PGMPhysReadHook: pVM captured");
+    }
     return PGMPhysRead_Orig(pVM, GCPhys, pvBuf, bufSize);
 }
 
@@ -626,28 +630,41 @@ T Ler(uint32_t virtualAddress) {
     __try {
         T var{};
         void* pVM = VMM.pVM;
+        uintptr_t physAddr = 0;
+        bool translated = false;
         
-        if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
-            for (int cpuId = 0; cpuId < 4; cpuId++) {
-                void* cpu = VMMGetCpuById(pVM, cpuId);
-                if (cpu == nullptr) continue;
+        if (pVM != nullptr) {
+            // Strategy 1: PGMPhysGCPtr2GCPhys (try both calling conventions)
+            if (PGMPhysGCPtr2GCPhys != nullptr) {
+                // Try pVM first (common VMM signature)
+                if (PGMPhysGCPtr2GCPhys(pVM, virtualAddress, &physAddr) == 0) {
+                    translated = true;
+                }
                 
-                uintptr_t physAddr = 0;
-                if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
-                    if (PGMPhysRead(pVM, physAddr, &var, sizeof(T)) == 0) {
-                        g_vmmMutex.unlock();
-                        return var;
+                // If pVM failed, try each VCPU (some VMM versions take VCPU)
+                if (!translated && VMMGetCpuById != nullptr) {
+                    for (int cpuId = 0; cpuId < 4 && !translated; cpuId++) {
+                        void* cpu = VMMGetCpuById(pVM, cpuId);
+                        if (cpu == nullptr) continue;
+                        if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
+                            translated = true;
+                        }
                     }
                 }
+                
+                if (translated && PGMPhysRead(pVM, physAddr, &var, sizeof(T)) == 0) {
+                    g_vmmMutex.unlock();
+                    return var;
+                }
             }
-        }
-        
-        // Fallback: manual page table walk
-        if (pVM != nullptr && PGMPhysRead != nullptr && VMM.GuestCR3 != 0 && VMM.GuestCR3 != 1) {
-            uintptr_t pa = EnderecoVirtualParaFisico32(VMM.GuestCR3, static_cast<uint32_t>(virtualAddress));
-            if (pa != 0 && PGMPhysRead(pVM, pa, &var, sizeof(T)) == 0) {
-                g_vmmMutex.unlock();
-                return var;
+            
+            // Strategy 2: Manual page table walk with available CR3
+            if (PGMPhysRead != nullptr && VMM.GuestCR3 != 0) {
+                uintptr_t pa = EnderecoVirtualParaFisico32((uint32_t)VMM.GuestCR3, static_cast<uint32_t>(virtualAddress));
+                if (pa != 0 && PGMPhysRead(pVM, pa, &var, sizeof(T)) == 0) {
+                    g_vmmMutex.unlock();
+                    return var;
+                }
             }
         }
         
@@ -664,24 +681,36 @@ void Escrever(uint32_t virtualAddress, T value) {
     g_vmmMutex.lock();
     __try {
         void* pVM = VMM.pVM;
+        uintptr_t physAddr = 0;
+        bool translated = false;
         
         if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
-            for (int cpuId = 0; cpuId < 4; cpuId++) {
-                void* cpu = VMMGetCpuById(pVM, cpuId);
-                if (cpu == nullptr) continue;
-                
-                uintptr_t physAddr = 0;
-                if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
-                    PGMPhysWrite(pVM, physAddr, &value, sizeof(T));
-                    g_vmmMutex.unlock();
-                    return;
+            // Try pVM first (common VMM signature)
+            if (PGMPhysGCPtr2GCPhys(pVM, virtualAddress, &physAddr) == 0) {
+                translated = true;
+            }
+            
+            // If pVM failed, try each VCPU (some VMM versions take VCPU)
+            if (!translated && VMMGetCpuById != nullptr) {
+                for (int cpuId = 0; cpuId < 4 && !translated; cpuId++) {
+                    void* cpu = VMMGetCpuById(pVM, cpuId);
+                    if (cpu == nullptr) continue;
+                    if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
+                        translated = true;
+                    }
                 }
+            }
+            
+            if (translated) {
+                PGMPhysWrite(pVM, physAddr, &value, sizeof(T));
+                g_vmmMutex.unlock();
+                return;
             }
         }
         
         // Fallback: manual page table walk
-        if (pVM != nullptr && PGMPhysWrite != nullptr && VMM.GuestCR3 != 0 && VMM.GuestCR3 != 1) {
-            uintptr_t pa = EnderecoVirtualParaFisico32(VMM.GuestCR3, static_cast<uint32_t>(virtualAddress));
+        if (pVM != nullptr && PGMPhysWrite != nullptr && VMM.GuestCR3 != 0) {
+            uintptr_t pa = EnderecoVirtualParaFisico32((uint32_t)VMM.GuestCR3, static_cast<uint32_t>(virtualAddress));
             if (pa != 0) {
                 PGMPhysWrite(pVM, pa, &value, sizeof(T));
                 g_vmmMutex.unlock();
@@ -825,12 +854,37 @@ inline void LoadLibraryAndHook() {
     if (VMM.pVM == nullptr) { diag_log("LoadLibraryAndHook: VMM.pVM timed out!"); return; }
     diag_log("LoadLibraryAndHook: VMM.pVM ready");
 
-    // Get real GuestCR3 from VMM
-    if (CPUMGetGuestCR3 != nullptr) {
-        void* cpu0 = VMMGetCpuById ? VMMGetCpuById(VMM.pVM, 0) : nullptr;
-        if (cpu0 != nullptr) {
+    // Get real GuestCR3 from VMM or scan VCPU memory
+    void* cpu0 = VMMGetCpuById ? VMMGetCpuById(VMM.pVM, 0) : nullptr;
+    if (cpu0 != nullptr) {
+        if (CPUMGetGuestCR3 != nullptr) {
             VMM.GuestCR3 = CPUMGetGuestCR3(cpu0);
+            diag_log("LoadLibraryAndHook: GuestCR3 from CPUMGetGuestCR3");
+        } else {
+            // Scan VCPU memory for plausible CR3 values
+            diag_log("LoadLibraryAndHook: CPUMGetGuestCR3 not found, scanning VCPU");
+            uint64_t* scan64 = (uint64_t*)cpu0;
+            for (int i = 0; i < 4096; i++) { // scan 32KB
+                uint64_t val = scan64[i];
+                if (val == 0 || val == 1 || (val >> 32) != 0) continue;
+                uint32_t cr3_candidate = (uint32_t)(val & 0xFFFFFF000ULL);
+                if (cr3_candidate < 0x1000 || cr3_candidate > 0x7FFFFFFF) continue;
+                // Verify PDE Present bit
+                uint32_t pde = 0;
+                if (PGMPhysRead_Orig && PGMPhysRead_Orig(VMM.pVM, cr3_candidate, &pde, sizeof(pde)) == 0) {
+                    if (pde & 1) {
+                        VMM.GuestCR3 = cr3_candidate;
+                        diag_log("LoadLibraryAndHook: GuestCR3 from VCPU scan (PDE verified)");
+                        break;
+                    }
+                }
+            }
         }
     }
-    if (VMM.GuestCR3 == 0) VMM.GuestCR3 = 1;
+    if (VMM.GuestCR3 == 0) {
+        VMM.GuestCR3 = 1;
+        diag_log("LoadLibraryAndHook: GuestCR3 fallback to 1");
+    } else {
+        char gcr3buf[128]; sprintf_s(gcr3buf, "LoadLibraryAndHook: GuestCR3 = %llu", VMM.GuestCR3); diag_log(gcr3buf);
+    }
 }
