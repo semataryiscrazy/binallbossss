@@ -24,6 +24,7 @@ namespace LockAim {
         static uintptr_t ct = 0;
 
         while (g_running) {
+            __try {
             if (!Auth.Attached) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
@@ -89,6 +90,7 @@ namespace LockAim {
             }
 
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            } __except(EXCEPTION_EXECUTE_HANDLER) { std::this_thread::sleep_for(std::chrono::milliseconds(100)); }
         }
     }
 

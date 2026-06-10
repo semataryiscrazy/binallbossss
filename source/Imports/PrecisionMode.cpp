@@ -32,7 +32,7 @@ namespace _0xPrecision {
 
     static void Run() {
         while (running) {
-            try {
+            __try {
                 bool enabled = PrecisionMode;
                 uint32_t wd = 0;
                 if (!GetWeaponData(wd)) {
@@ -59,7 +59,7 @@ namespace _0xPrecision {
                 lastWd = wd;
                 std::this_thread::sleep_for(std::chrono::milliseconds(250));
 
-            } catch (...) {
+            } __except(EXCEPTION_EXECUTE_HANDLER) {
                 continue;
             }
         }

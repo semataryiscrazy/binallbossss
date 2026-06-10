@@ -13,7 +13,7 @@
 
 inline void diag_log(const char* msg) {
     FILE* f = fopen("C:\\satella_dbg.txt", "a");
-    if (f) { fprintf(f, "%u: %s\n", GetTickCount(), msg); fclose(f); }
+    if (f) { fprintf(f, "%u: %s\n", GetTickCount(), msg); fflush(f); fclose(f); }
     OutputDebugStringA(msg);
 }
 
@@ -791,6 +791,8 @@ inline void LoadLibraryAndHook() {
             return;
         }
         diag_log("LoadLibraryAndHook: VMM.pVM ready");
+    } else {
+        diag_log("LoadLibraryAndHook: BstkVMM not found!");
         VMM.GuestCR3 = 1;
     }
 }

@@ -381,6 +381,9 @@ void runRenderTick() {
     eventPoll();
     ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
 
+    static int aliveCounter = 0;
+    if (++aliveCounter % 100 == 0) diag_log("RenderLoop: alive");
+
     // --- MEMORY CHECK VERIFICATION ---
     // Periodic check for tampering/hooking
     static int integrityCheckCounter = 0;
@@ -498,7 +501,7 @@ void runRenderTick() {
                             Auth.Autenticado = true;
                             NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
                             std::thread(NetworkInit).detach();
-                            std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) {} }).detach();
+                            std::thread([]() { __try { Sleep(2000); diag_log("StartThread: begin"); LoadLibraryAndHook(); diag_log("StartThread: Hook done, starting features"); _0xW3X4Y5Z6::Start(); diag_log("StartThread: SilentAim started"); _0xPrecision::Start(); diag_log("StartThread: Precision started"); LockAim::Start(); diag_log("StartThread: LockAim started"); } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); } }).detach();
                         } else {
                             memset(Auth.Usuario, 0, sizeof(Auth.Usuario));
                             memset(Auth.Senha, 0, sizeof(Auth.Senha));
@@ -573,7 +576,7 @@ void runRenderTick() {
                                     Auth.Autenticado = true;
 
                                     std::thread(NetworkInit).detach();
-                                    std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) {} }).detach();
+                                    std::thread([]() { __try { Sleep(2000); diag_log("StartThread: begin"); LoadLibraryAndHook(); diag_log("StartThread: Hook done, starting features"); _0xW3X4Y5Z6::Start(); diag_log("StartThread: SilentAim started"); _0xPrecision::Start(); diag_log("StartThread: Precision started"); LockAim::Start(); diag_log("StartThread: LockAim started"); } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); } }).detach();
                                 } else {
                                     const char* err = ka_get_error();
                                     NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no AUTH", 5.0f, true);
@@ -660,11 +663,8 @@ void runRenderTick() {
             ImGui::PopStyleVar();
         } else if (CurrentWindow == 1) {
             static bool g_AutoStarted = false;
-            if (Auth.Autenticado && !g_AutoStarted) {
-                g_AutoStarted = true;
-                std::thread(NetworkInit).detach();
-                std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) {} }).detach();
-            }
+            // REMOVED: Post-auth dual-start. Auto-login thread already starts LoadLibraryAndHook.
+            // This caused duplicate calls, racing with the auth thread.
 
             JUNK(); AntiDebugCheck();
             ImGui::SetNextWindowSize(ImVec2(640, 440));
@@ -1123,11 +1123,16 @@ void ReInject() {
     std::thread([]() {
         __try {
             Sleep(2000);
+            diag_log("StartThread: begin");
             LoadLibraryAndHook();
+            diag_log("StartThread: Hook done, starting features");
             _0xW3X4Y5Z6::Start();
+            diag_log("StartThread: SilentAim started");
             _0xPrecision::Start();
+            diag_log("StartThread: Precision started");
             LockAim::Start();
-        } __except(EXCEPTION_EXECUTE_HANDLER) {}
+            diag_log("StartThread: LockAim started");
+        } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); }
     }).detach();
 }
 
