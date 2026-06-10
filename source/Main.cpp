@@ -996,7 +996,10 @@ static void deep_clean_internal() {
     if(OpenClipboard(NULL)){EmptyClipboard();CloseClipboard();}
 }
 
+static void DiagLog(const char* msg);
+
 static void RenderLoop() {
+    DiagLog("[D] RenderLoop ENTERED");
     __try {
         using namespace std::chrono;
         auto lastRender = steady_clock::now();
@@ -1260,6 +1263,7 @@ static void InitIdowImpl() {
     DiagLog("[D] Step6: CoInitializeEx");
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
+    DiagLog("[D] Step7: ImGui style setup");
     // ─── Global UI Style (preto escuro) ───
     {
         ImGuiStyle& s = ImGui::GetStyle();
@@ -1298,6 +1302,7 @@ static void InitIdowImpl() {
         c[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.60f, 0.60f, 0.65f, 0.80f);
     }
 
+    DiagLog("[D] Step8: RenderLoop call");
     RenderLoop();
 
     // Shutdown ImGui e overlay
