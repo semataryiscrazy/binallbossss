@@ -1213,13 +1213,15 @@ static void ClearPEBDebugFlags() {
     }
 }
 
+static void DiagLog(const char* msg);
+
 static void InitIdowImpl() {
-    std::cout << "[InitIdow] Step 1: InitializeConsole" << std::endl;
+    DiagLog("[D] Step1: InitConsole");
     InitializeConsole();
-    std::cout << "[InitIdow] Step 2: LookupWindow" << std::endl;
+    DiagLog("[D] Step2: LookupWindow");
     JanelaAlvo = LookupWindowByClassName(AY_OBFUSCATE("BlueStacksApp"));
     if (!JanelaAlvo) {
-        std::cout << "[InitIdow] Step 2b: EnumWindows fallback" << std::endl;
+        DiagLog("[D] Step2b: EnumWindows fallback");
         struct AltSearch {
             static BOOL CALLBACK EnumProc(HWND hw, LPARAM lp) {
                 std::function<bool(HWND)>* cb = reinterpret_cast<std::function<bool(HWND)>*>(lp);
@@ -1246,17 +1248,16 @@ static void InitIdowImpl() {
         EnumWindows(AltSearch::EnumProc, reinterpret_cast<LPARAM>(&altW));
         if (!JanelaAlvo) JanelaAlvo = FindWindowW(NULL, AY_OBFUSCATE(L"BlueStacks"));
     }
-    if (!JanelaAlvo) { JanelaAlvo = NULL; }
-    std::cout << "[InitIdow] Step 3: LoadKeyBinds" << std::endl;
+    if (!JanelaAlvo) { JanelaAlvo = NULL; DiagLog("[D] JanelaAlvo=NULL"); }
+    DiagLog("[D] Step3: LoadKeyBinds");
     LoadKeyBinds();
-    std::cout << "[InitIdow] Step 4: setupWindow" << std::endl;
+    DiagLog("[D] Step4: setupWindow");
     setupWindow(JanelaAlvo);
-    if (!hwnd) { std::cout << "[InitIdow] hwnd NULL, retornando" << std::endl; return; }
-    std::cout << "[InitIdow] Step 5: SetWindowDisplayAffinity" << std::endl;
+    if (!hwnd) { DiagLog("[D] hwnd NULL"); return; }
+    DiagLog("[D] Step5: SetWindowDisplayAffinity");
     SetWindowDisplayAffinity(hwnd, 0x11);
 
-    // ─── Volume init ───
-    std::cout << "[InitIdow] Step 6: CoInitializeEx" << std::endl;
+    DiagLog("[D] Step6: CoInitializeEx");
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
     // ─── Global UI Style (preto escuro) ───
@@ -1366,6 +1367,19 @@ static void LogCrash(const char* context, EXCEPTION_POINTERS* ep = nullptr) {
 static LONG WINAPI VectoredHandler(EXCEPTION_POINTERS* ep) {
     LogCrash("VEH", ep);
     return EXCEPTION_CONTINUE_SEARCH;
+}
+
+static void DiagLog(const char* msg) {
+    std::cout << msg << std::endl;
+    wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
+    wcscat_s(tmp, L"satella_crash.txt");
+    HANDLE hCrash = CreateFileW(tmp, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
+    if (hCrash != INVALID_HANDLE_VALUE) {
+        SetFilePointer(hCrash, 0, NULL, FILE_END);
+        DWORD w; WriteFile(hCrash, msg, (DWORD)strlen(msg), &w, NULL);
+        WriteFile(hCrash, "\n", 1, &w, NULL);
+        CloseHandle(hCrash);
+    }
 }
 
 void InitIdow() {
