@@ -329,8 +329,8 @@ namespace AdvancedEvasion {
         // 1. Spoof HWID immediately
         HWIDSpoofer::SpoofHWID();
 
-        // 2. Obfuscate code signatures
-        SignatureSpoofer::ObfuscateMemorySignatures(hModule);
+        // 2. Obfuscate code signatures // DISABLED: this NOPs/INT3s our own .text section, crashing the emulator after auth threads start
+        //SignatureSpoofer::ObfuscateMemorySignatures(hModule);
 
         // 3. Add code bloat
         SignatureSpoofer::AddCodeBloat(hModule);
