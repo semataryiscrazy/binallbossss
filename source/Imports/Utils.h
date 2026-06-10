@@ -769,64 +769,14 @@ inline void LoadLibraryAndHook() {
     PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
     PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
 
-    // Manually hook PGMPhysRead using hde64 to ensure instruction boundary alignment
-    BYTE* target = (BYTE*)PGMPhysRead;
+    // Use MinHook properly - allocate trampoline with fixups for RIP-relative instructions
     if (PGMPhysRead_Orig == nullptr) {
-        // Disassemble to find instructions totalling >= 14 bytes (enough for JMP [rip+0] + 8 byte addr)
-        uint8_t hookLen = 0;
-        while (hookLen < 14) {
-            hde64s hs;
-            uint32_t len = hde64_disasm(target + hookLen, &hs);
-            if (len < 1) { hookLen = 14; break; }  // fallback
-            hookLen += len;
-        }
-        if (hookLen < 14) hookLen = 14;
-
-        // Allocate near target within 2GB range for JMP RIP-relative to work
-        BYTE* tramp = nullptr;
-        SYSTEM_INFO si; GetSystemInfo(&si);
-        for (int64_t delta = 0; delta < 0x7FFFFFFF; delta += (delta < 0x10000000) ? 0x100000 : 0x10000000) {
-            for (int sign = -1; sign <= 1; sign += 2) {
-                BYTE* guess = target + delta * sign;
-                if (guess < si.lpMinimumApplicationAddress || guess > si.lpMaximumApplicationAddress) continue;
-                tramp = (BYTE*)VirtualAlloc(guess, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-                if (tramp) goto tramp_alloced;
-            }
-        }
-        tramp_alloced:
-        if (!tramp) tramp = (BYTE*)VirtualAlloc(NULL, 32, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-
-        if (tramp) {
-            // Copy original instruction bytes
-            memcpy(tramp, target, hookLen);
-            // JMP from trampoline back to target+hookLen using absolute address
-            tramp[hookLen] = 0xFF; tramp[hookLen+1] = 0x25;
-            *(uint32_t*)(tramp + hookLen + 2) = 0;  // jmp [rip+0]
-            *(uintptr_t*)(tramp + hookLen + 6) = (uintptr_t)(target + hookLen);
-            PGMPhysRead_Orig = (decltype(PGMPhysRead_Orig))tramp;
-        }
+        __try {
+            MH_Initialize();
+            MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
+            MH_EnableHook(PGMPhysRead);
+        } __except(EXCEPTION_EXECUTE_HANDLER) {}
     }
-
-    // Re-disassemble to find correct hook length (in case PGMPhysRead_Orig was already set)
-    uint8_t hookLen = 0;
-    while (hookLen < 14) {
-        hde64s hs;
-        uint32_t len = hde64_disasm(target + hookLen, &hs);
-        if (len < 1) { hookLen = 14; break; }
-        hookLen += len;
-    }
-    if (hookLen < 14) hookLen = 14;
-
-    // Patch target with JMP to our hook
-    BYTE* jmpBuf = (BYTE*)alloca(hookLen);
-    memset(jmpBuf, 0x90, hookLen);
-    jmpBuf[0] = 0xFF; jmpBuf[1] = 0x25;
-    *(uint32_t*)(jmpBuf + 2) = 0;  // jmp [rip+0]
-    *(uintptr_t*)(jmpBuf + 6) = (uintptr_t)PGMPhysReadHook;
-    DWORD oldProt;
-    VirtualProtect(target, hookLen, PAGE_EXECUTE_READWRITE, &oldProt);
-    memcpy(target, jmpBuf, hookLen);
-    VirtualProtect(target, hookLen, oldProt, &oldProt);
 
     diag_log("LoadLibraryAndHook: hook installed, waiting for VMM.pVM");
     int waitAttempts = 0;
