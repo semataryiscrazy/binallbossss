@@ -31,7 +31,7 @@ inline struct {
 } KeysBind;
 
 // === AIMBOT ===
-inline bool AimSilent = true;
+inline bool AimSilent = false;
 inline bool AimVisibleCheck = true;
 inline bool AimPrediction = true;
 inline float AimPredictionAmount = 1.5f;
@@ -87,14 +87,14 @@ inline bool SilentAimIgnoreKnocked = true;
 inline bool SilentAimIgnoreBots = true;
 
 // === ESP ===
-inline bool ESPNome = true;
-inline bool ESPLinha = true;
+inline bool ESPNome = false;
+inline bool ESPLinha = false;
 inline bool ESPEsqueleto = true;
-inline int ESPCaixa = 1;
+inline int ESPCaixa = 0;
 inline bool ESPFilledBox = false;
-inline bool ESPDistancia = true;
-inline bool ESPHealthText = false;
-inline int ESPHealthBarPos = 0; // 0=Off, 1=Left, 2=Right, 3=Top, 4=Bottom
+inline bool ESPDistancia = false;
+inline bool ESPHealthText = true;
+inline int ESPHealthBarPos = 1; // 0=Off, 1=Left, 2=Right, 3=Top, 4=Bottom
 inline bool ESPMostrarTime = false;
 inline bool ESPMostrarDerrubado = false;
 inline bool ESPWeaponName = false;
