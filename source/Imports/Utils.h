@@ -3,6 +3,7 @@
 #include <functional>
 #include <sstream>
 #include <string>
+#include <algorithm>
 #include <windows.h>
 #include <shlwapi.h>
 #include <process.h>
@@ -618,6 +619,54 @@ inline uintptr_t TranslateVirtualToPhysical(uintptr_t va, uintptr_t cr3, uintptr
     }
 }
 
+// ─── ADB Memory Reader (fallback quando VMM falha) ───
+inline std::unordered_map<uint32_t, std::vector<uint8_t>> g_adbCache;
+inline std::string g_adbPid;
+inline uint64_t g_adbLastCleanup = 0;
+
+inline bool AdbFetchPage(uint32_t pageBase) {
+    if (g_adbCache.find(pageBase) != g_adbCache.end()) return true;
+    
+    if (g_adbPid.empty()) {
+        std::string port = DetectPortFromNetstat();
+        std::string cmd = "-s " + port + " shell pidof com.dts.freefireth";
+        g_adbPid = ShellReturn_Adb(cmd.c_str());
+        g_adbPid.erase(g_adbPid.find_last_not_of(" \n\r\t") + 1);
+        if (g_adbPid.empty()) return false;
+    }
+    
+    char cmd[512];
+    sprintf_s(cmd, "-s %s exec-out shell /boot/android/android/system/xbin/bstk/su 0 busybox dd if=/proc/%s/mem bs=4096 skip=%u count=1 2>/dev/null | busybox xxd -p",
+        DetectPortFromNetstat().c_str(), g_adbPid.c_str(), pageBase / 4096);
+    
+    std::string output = ShellReturn_Adb(cmd);
+    if (output.empty()) return false;
+    
+    output.erase(std::remove_if(output.begin(), output.end(), ::isspace), output.end());
+    std::vector<uint8_t> page(4096, 0);
+    size_t hexLen = output.size();
+    for (size_t i = 0; i < 4096 && i * 2 + 1 < hexLen; i++) {
+        auto hexPair = output.substr(i * 2, 2);
+        page[i] = (uint8_t)strtol(hexPair.c_str(), nullptr, 16);
+    }
+    g_adbCache[pageBase] = std::move(page);
+    return true;
+}
+
+inline void AdbClearCache() { g_adbCache.clear(); }
+
+template<typename T>
+inline T LerAdb(uint32_t addr) {
+    T var{};
+    uint32_t pageBase = addr & ~0xFFF;
+    if (!AdbFetchPage(pageBase)) return var;
+    auto& page = g_adbCache[pageBase];
+    uint32_t off = addr & 0xFFF;
+    if (off + sizeof(T) > 4096) return var;
+    memcpy(&var, &page[off], sizeof(T));
+    return var;
+}
+
 template<typename T>
 T Ler(uint32_t virtualAddress) {
     g_vmmMutex.lock();
@@ -628,14 +677,10 @@ T Ler(uint32_t virtualAddress) {
         bool translated = false;
         
         if (pVM != nullptr) {
-            // Strategy 1: PGMPhysGCPtr2GCPhys (try both calling conventions)
             if (PGMPhysGCPtr2GCPhys != nullptr) {
-                // Try pVM first (common VMM signature)
                 if (PGMPhysGCPtr2GCPhys(pVM, virtualAddress, &physAddr) == 0) {
                     translated = true;
                 }
-                
-                // If pVM failed, try each VCPU (some VMM versions take VCPU)
                 if (!translated && VMMGetCpuById != nullptr) {
                     for (int cpuId = 0; cpuId < 4 && !translated; cpuId++) {
                         void* cpu = VMMGetCpuById(pVM, cpuId);
@@ -645,14 +690,11 @@ T Ler(uint32_t virtualAddress) {
                         }
                     }
                 }
-                
                 if (translated && PGMPhysRead(pVM, physAddr, &var, sizeof(T)) == 0) {
                     g_vmmMutex.unlock();
                     return var;
                 }
             }
-            
-            // Strategy 2: Manual page table walk with available CR3
             if (PGMPhysRead != nullptr && VMM.GuestCR3 != 0) {
                 uintptr_t pa = 0;
                 TranslateVirtualToPhysical(virtualAddress, VMM.GuestCR3, pa);
@@ -664,10 +706,12 @@ T Ler(uint32_t virtualAddress) {
         }
         
         g_vmmMutex.unlock();
-        return T();
+        
+        // Strategy 3: ADB fallback (slow but works)
+        return LerAdb<T>(virtualAddress);
     } __except(EXCEPTION_EXECUTE_HANDLER) {
         g_vmmMutex.unlock();
-        return T();
+        return LerAdb<T>(virtualAddress);
     }
 }
 
