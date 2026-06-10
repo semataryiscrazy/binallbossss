@@ -1218,6 +1218,11 @@ static void ClearPEBDebugFlags() {
 
 static void DiagLog(const char* msg);
 
+static HRESULT SafeCoInitialize() {
+    __try { return CoInitializeEx(NULL, COINIT_APARTMENTTHREADED); }
+    __except(EXCEPTION_EXECUTE_HANDLER) { return E_FAIL; }
+}
+
 static void InitIdowImpl() {
     DiagLog("[D] Step1: InitConsole");
     InitializeConsole();
@@ -1261,7 +1266,9 @@ static void InitIdowImpl() {
     SetWindowDisplayAffinity(hwnd, 0x11);
 
     DiagLog("[D] Step6: CoInitializeEx");
-    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    HRESULT hr = SafeCoInitialize();
+    if (FAILED(hr)) DiagLog("[D] Step6a: CoInitializeEx failed/crashed");
+    DiagLog("[D] Step6b: CoInitializeEx returned");
 
     DiagLog("[D] Step7: ImGui style setup");
     // ─── Global UI Style (preto escuro) ───
