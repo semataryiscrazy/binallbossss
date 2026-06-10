@@ -498,7 +498,7 @@ void runRenderTick() {
                             Auth.Autenticado = true;
                             NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
                             std::thread(NetworkInit).detach();
-                            std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+                            std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) {} }).detach();
                         } else {
                             memset(Auth.Usuario, 0, sizeof(Auth.Usuario));
                             memset(Auth.Senha, 0, sizeof(Auth.Senha));
@@ -573,7 +573,7 @@ void runRenderTick() {
                                     Auth.Autenticado = true;
 
                                     std::thread(NetworkInit).detach();
-                                    std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+                                    std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) {} }).detach();
                                 } else {
                                     const char* err = ka_get_error();
                                     NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no AUTH", 5.0f, true);
@@ -663,7 +663,7 @@ void runRenderTick() {
             if (Auth.Autenticado && !g_AutoStarted) {
                 g_AutoStarted = true;
                 std::thread(NetworkInit).detach();
-                std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+                std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) {} }).detach();
             }
 
             JUNK(); AntiDebugCheck();
@@ -1118,11 +1118,13 @@ void ReInject() {
     UpdateEntityCache();
     std::thread(NetworkInit).detach();
     std::thread([]() {
-        Sleep(2000);
-        LoadLibraryAndHook();
-        _0xW3X4Y5Z6::Start();
-        _0xPrecision::Start();
-        LockAim::Start();
+        __try {
+            Sleep(2000);
+            LoadLibraryAndHook();
+            _0xW3X4Y5Z6::Start();
+            _0xPrecision::Start();
+            LockAim::Start();
+        } __except(EXCEPTION_EXECUTE_HANDLER) {}
     }).detach();
 }
 
