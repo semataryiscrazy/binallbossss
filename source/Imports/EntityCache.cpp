@@ -42,12 +42,12 @@ static uintptr_t GetEngine() {
         engineTimer = now;
         cachedGE = 0;
         if (il2cpp < 0x10000) return 0;
-        uintptr_t base = Ler<uintptr_t>(il2cpp + Offsets::InitBase);
+        uintptr_t base = Ler<uint32_t>(il2cpp + Offsets::InitBase);
         if (base != 0 && base > 0x10000) {
-            uintptr_t facade = Ler<uintptr_t>(base);
+            uintptr_t facade = Ler<uint32_t>(base);
             if (facade != 0 && facade > 0x10000) {
-                uintptr_t sf = Ler<uintptr_t>(facade + Offsets::StaticClass);
-                if (sf != 0 && sf > 0x10000) cachedGE = Ler<uintptr_t>(sf);
+                uintptr_t sf = Ler<uint32_t>(facade + Offsets::StaticClass);
+                if (sf != 0 && sf > 0x10000) cachedGE = Ler<uint32_t>(sf);
             }
         }
     }
@@ -56,11 +56,11 @@ static uintptr_t GetEngine() {
 
 static uintptr_t GetLocal(uintptr_t ge) {
     if (ge == 0) return 0;
-    uintptr_t m = Ler<uintptr_t>(ge + Offsets::CurrentMatch);
+    uintptr_t m = Ler<uint32_t>(ge + Offsets::CurrentMatch);
     if (m == 0) { cachedLocal = 0; return 0; }
     if (Ler<int>(m + Offsets::MatchStatus) != 1) { cachedLocal = 0; return 0; }
     if (cachedLocal != 0) return cachedLocal;
-    cachedLocal = Ler<uintptr_t>(m + Offsets::LocalPlayer);
+    cachedLocal = Ler<uint32_t>(m + Offsets::LocalPlayer);
     return cachedLocal;
 }
 
@@ -96,11 +96,11 @@ static void CacheLoop() {
         failCount = 0;
 
         // Atualiza camera matrix + copia atomica para render
-        uintptr_t ccm = Ler<uintptr_t>(ge + 0x74);
+        uintptr_t ccm = Ler<uint32_t>(ge + 0x74);
         if (ccm > 0x10000) {
-            uintptr_t cam = Ler<uintptr_t>(ccm + string2Offset(AY_OBFUSCATE("0x10")));
+            uintptr_t cam = Ler<uint32_t>(ccm + string2Offset(AY_OBFUSCATE("0x10")));
             if (cam > 0x10000) {
-                uintptr_t ic = Ler<uintptr_t>(cam + string2Offset(AY_OBFUSCATE("0x8")));
+                uintptr_t ic = Ler<uint32_t>(cam + string2Offset(AY_OBFUSCATE("0x8")));
                 if (ic > 0x10000) {
                     cachedMatrix = Ler<UnityMatrix>(ic + Offsets::ViewMatrix);
                     cachedScreenW = SWidth; cachedScreenH = SHeight;
@@ -136,31 +136,31 @@ static void CacheLoop() {
                 if (now - it->second.lastUpdate > 10000) it = g_cacheBack.erase(it); else ++it;
         }
 
-        uintptr_t dict = Ler<uintptr_t>(ge + Offsets::DictionaryEntities); if (dict == 0) { g_cacheBack.clear(); SwapEntityCache(); continue; }
-        uintptr_t list = Ler<uintptr_t>(dict + Offsets::Il2CppDictionaryDataPtr); if (list == 0) { g_cacheBack.clear(); SwapEntityCache(); continue; }
+        uintptr_t dict = Ler<uint32_t>(ge + Offsets::DictionaryEntities); if (dict == 0) { g_cacheBack.clear(); SwapEntityCache(); continue; }
+        uintptr_t list = Ler<uint32_t>(dict + Offsets::Il2CppDictionaryDataPtr); if (list == 0) { g_cacheBack.clear(); SwapEntityCache(); continue; }
         list += 0x10;
         int cnt = Ler<int>(dict + Offsets::Il2CppDictionaryCount); if (cnt < 1 || cnt > 200) { g_cacheBack.clear(); SwapEntityCache(); continue; }
 
-        Vector3 myPos = Transform_ObterPosicao(Ler<uintptr_t>(cachedLocalPlayer + Offsets::MainTransform));
+        Vector3 myPos = Transform_ObterPosicao(Ler<uint32_t>(cachedLocalPlayer + Offsets::MainTransform));
 
     for (int i = 0; i < cnt; i++) {
-        uintptr_t e = Ler<uintptr_t>(list + (i * 0x10) + 0xC);
+        uintptr_t e = Ler<uint32_t>(list + (i * 0x10) + 0xC);
         if (e == 0 || e == cachedLocalPlayer) continue;
 
         EntityData fr;
-        uintptr_t am = Ler<uintptr_t>(e + Offsets::AvatarManager); if (am == 0 || am < 0x10000) continue;
-        uintptr_t uas = Ler<uintptr_t>(am + Offsets::UmaAvatarSimple); if (uas == 0 || uas < 0x10000) continue;
-        uintptr_t ud = Ler<uintptr_t>(uas + Offsets::UMAData); if (ud == 0 || ud < 0x10000) continue;
+        uintptr_t am = Ler<uint32_t>(e + Offsets::AvatarManager); if (am == 0 || am < 0x10000) continue;
+        uintptr_t uas = Ler<uint32_t>(am + Offsets::UmaAvatarSimple); if (uas == 0 || uas < 0x10000) continue;
+        uintptr_t ud = Ler<uint32_t>(uas + Offsets::UMAData); if (ud == 0 || ud < 0x10000) continue;
         if (Ler<int>(e + string2Offset(AY_OBFUSCATE("0xC1C"))) == 0)
             if (!Ler<bool>(uas + Offsets::Avatar_IsVisible)) continue;
-        uintptr_t pri = Ler<uintptr_t>(e + Offsets::PRIDataPool); if (pri == 0 || pri < 0x10000) continue;
-        uintptr_t rdu = Ler<uintptr_t>(Ler<uintptr_t>(pri + Offsets::ReplicationDataPoolUnsafe) + Offsets::ReplicationDataUnsafe); if (rdu == 0 || rdu < 0x10000) continue;
+        uintptr_t pri = Ler<uint32_t>(e + Offsets::PRIDataPool); if (pri == 0 || pri < 0x10000) continue;
+        uintptr_t rdu = Ler<uint32_t>(Ler<uint32_t>(pri + Offsets::ReplicationDataPoolUnsafe) + Offsets::ReplicationDataUnsafe); if (rdu == 0 || rdu < 0x10000) continue;
         fr.health = Ler<short>(rdu + Offsets::Health); if (fr.health <= 0) continue;
 
         fr.address = e;
         fr.dying = false;
         fr.garota = Ler<bool>(e + Offsets::CDOBMFNCJHD);
-        uintptr_t pd = Ler<uintptr_t>(e + Offsets::Player_Data);
+        uintptr_t pd = Ler<uint32_t>(e + Offsets::Player_Data);
         if (pd != 0 && pd > 0x10000) fr.dying = (Ler<int>(pd + Offsets::Player_IsDead) == 8);
         fr.isTeam = Ler<bool>(ud + Offsets::TeamMate);
 
@@ -173,9 +173,9 @@ static void CacheLoop() {
         if (sb.Z != 0 || sh.Z != 0) continue;
         fr.screenBody = sb; fr.screenHead = sh;
 
-        auto bpi = Ler<uintptr_t>(e + Offsets::Player_Name);
+        auto bpi = Ler<uint32_t>(e + Offsets::Player_Name);
         if (bpi != 0) {
-            auto pn = Ler<uintptr_t>(bpi + string2Offset(AY_OBFUSCATE("0x18")));
+            auto pn = Ler<uint32_t>(bpi + string2Offset(AY_OBFUSCATE("0x18")));
             if (pn != 0) {
                 int nc = Ler<int>(pn + string2Offset(AY_OBFUSCATE("0x8")));
                 fr.name = ObterStr(pn + string2Offset(AY_OBFUSCATE("0xC")), nc);
@@ -184,13 +184,13 @@ static void CacheLoop() {
 
         // Weapon name
         {
-            uintptr_t wpn = Ler<uintptr_t>(e + Offsets::Weapon);
+            uintptr_t wpn = Ler<uint32_t>(e + Offsets::Weapon);
             if (wpn > 0x10000) {
-                uintptr_t wpnd = Ler<uintptr_t>(wpn + Offsets::WeaponData);
+                uintptr_t wpnd = Ler<uint32_t>(wpn + Offsets::WeaponData);
                 if (wpnd > 0x10000) {
-                    auto wpnBpi = Ler<uintptr_t>(wpnd + string2Offset(AY_OBFUSCATE("0x8")));
+                    auto wpnBpi = Ler<uint32_t>(wpnd + string2Offset(AY_OBFUSCATE("0x8")));
                     if (wpnBpi != 0) {
-                        auto wpnPn = Ler<uintptr_t>(wpnBpi + string2Offset(AY_OBFUSCATE("0x18")));
+                        auto wpnPn = Ler<uint32_t>(wpnBpi + string2Offset(AY_OBFUSCATE("0x18")));
                         if (wpnPn != 0) {
                             int wpnNc = Ler<int>(wpnPn + string2Offset(AY_OBFUSCATE("0x8")));
                             fr.weaponName = ObterStr(wpnPn + string2Offset(AY_OBFUSCATE("0xC")), wpnNc);

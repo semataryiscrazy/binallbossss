@@ -35,17 +35,17 @@ namespace SpinbotImpl {
             return;
         }
 
-        uintptr_t m_CachedTransform = Ler<uintptr_t>(localPlayer + Offsets::MainTransform);
+        uintptr_t m_CachedTransform = Ler<uint32_t>(localPlayer + Offsets::MainTransform);
         if (m_CachedTransform == 0) return;
 
-        uintptr_t TransformAcess = Ler<uintptr_t>(m_CachedTransform + 0x8);
+        uintptr_t TransformAcess = Ler<uint32_t>(m_CachedTransform + 0x8);
         if (TransformAcess == 0) return;
 
         int TransformIndex = Ler<int>(TransformAcess + 0x24);
-        uintptr_t TransformMatrix = Ler<uintptr_t>(TransformAcess + 0x20);
+        uintptr_t TransformMatrix = Ler<uint32_t>(TransformAcess + 0x20);
         if (TransformMatrix == 0) return;
 
-        uintptr_t pTransformValues = Ler<uintptr_t>(TransformMatrix + 0x18);
+        uintptr_t pTransformValues = Ler<uint32_t>(TransformMatrix + 0x18);
         if (pTransformValues == 0) return;
 
         int rotationOffset = 0x30 * TransformIndex + 0x10;
