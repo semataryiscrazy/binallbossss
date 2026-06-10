@@ -625,45 +625,55 @@ inline uintptr_t TranslateVirtualToPhysical(uintptr_t va, uintptr_t cr3, uintptr
 
 template<typename T>
 T Ler(uint32_t virtualAddress) {
-    std::lock_guard<std::recursive_mutex> lock(g_vmmMutex);
-    T var{};
-    void* pVM = VMM.pVM;
-    
-    if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
-        // Tentar converter usando mÃºltiplas CPUs (como o projeto funcional faz)
-        for (int cpuId = 0; cpuId < 4; cpuId++) {
-            void* cpu = VMMGetCpuById(pVM, cpuId);
-            if (cpu == nullptr) continue;
-            
-            uintptr_t physAddr = 0;
-            if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
-                if (PGMPhysRead(pVM, physAddr, &var, sizeof(T)) == 0) {
-                    return var;
+    g_vmmMutex.lock();
+    __try {
+        T var{};
+        void* pVM = VMM.pVM;
+        
+        if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
+            for (int cpuId = 0; cpuId < 4; cpuId++) {
+                void* cpu = VMMGetCpuById(pVM, cpuId);
+                if (cpu == nullptr) continue;
+                
+                uintptr_t physAddr = 0;
+                if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
+                    if (PGMPhysRead(pVM, physAddr, &var, sizeof(T)) == 0) {
+                        g_vmmMutex.unlock();
+                        return var;
+                    }
                 }
             }
         }
+        g_vmmMutex.unlock();
+        return T();
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        g_vmmMutex.unlock();
+        return T();
     }
-    
-    return T();
 }
 
 template<typename T>
 void Escrever(uint32_t virtualAddress, T value) {
-    std::lock_guard<std::recursive_mutex> lock(g_vmmMutex);
-    void* pVM = VMM.pVM;
-    
-    if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
-        // Tentar converter usando mÃºltiplas CPUs
-        for (int cpuId = 0; cpuId < 4; cpuId++) {
-            void* cpu = VMMGetCpuById(pVM, cpuId);
-            if (cpu == nullptr) continue;
-            
-            uintptr_t physAddr = 0;
-            if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
-                PGMPhysWrite(pVM, physAddr, &value, sizeof(T));
-                return;
+    g_vmmMutex.lock();
+    __try {
+        void* pVM = VMM.pVM;
+        
+        if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
+            for (int cpuId = 0; cpuId < 4; cpuId++) {
+                void* cpu = VMMGetCpuById(pVM, cpuId);
+                if (cpu == nullptr) continue;
+                
+                uintptr_t physAddr = 0;
+                if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
+                    PGMPhysWrite(pVM, physAddr, &value, sizeof(T));
+                    g_vmmMutex.unlock();
+                    return;
+                }
             }
         }
+        g_vmmMutex.unlock();
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        g_vmmMutex.unlock();
     }
 }
 
