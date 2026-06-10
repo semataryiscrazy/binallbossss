@@ -85,10 +85,9 @@ static void CacheLoop() {
 
         uintptr_t ge = GetEngine(); if (ge == 0) {
             failCount++;
-            if (failCount > 60) { // ~3s sem engine = conexao perdida
-                std::cout << "[CacheLoop] failCount>60, Auth.Attached=false" << std::endl;
-                Auth.Attached = false;
-                failCount = 0;
+            if (failCount > 120) { // ~6s sem engine = aviso
+                std::cout << "[CacheLoop] failCount>120, engine still not ready" << std::endl;
+                failCount = 60; // reset para continuar tentando
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue;
         }
