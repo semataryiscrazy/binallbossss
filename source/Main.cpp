@@ -1218,10 +1218,12 @@ static void ClearPEBDebugFlags() {
 
 static void DiagLog(const char* msg);
 
+#pragma optimize("", off)
 static HRESULT SafeCoInitialize() {
     __try { return CoInitializeEx(NULL, COINIT_APARTMENTTHREADED); }
     __except(EXCEPTION_EXECUTE_HANDLER) { return E_FAIL; }
 }
+#pragma optimize("", on)
 
 static void InitIdowImpl() {
     DiagLog("[D] Step1: InitConsole");
