@@ -109,7 +109,7 @@ inline float espOffsetY = 0.0f;
 inline float WeaponSpeedValue = 1.35f;
 
 // === MISC ===
-inline bool ShowDebugConsole = false;
+inline bool ShowDebugConsole = true;
 inline bool Watermark = true;
 inline bool FPSCounter = true;
 inline bool WeaponAttributesEnabled = false;
