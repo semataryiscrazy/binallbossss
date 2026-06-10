@@ -754,9 +754,13 @@ inline void LoadLibraryAndHook() {
         PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
         PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
 
-        MH_Initialize();
-        MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
-        MH_EnableHook(PGMPhysRead);
+        if (PGMPhysRead != nullptr) {
+            __try {
+                MH_Initialize();
+                MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
+                MH_EnableHook(PGMPhysRead);
+            } __except(EXCEPTION_EXECUTE_HANDLER) {}
+        }
 
         int waitAttempts = 0;
         while (VMM.pVM == nullptr && waitAttempts < 500) {
