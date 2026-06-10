@@ -675,52 +675,7 @@ inline T LerAdb(uint32_t addr) {
 
 template<typename T>
 T Ler(uint32_t virtualAddress) {
-    g_vmmMutex.lock();
-    __try {
-        T var{};
-        void* pVM = VMM.pVM;
-        uintptr_t physAddr = 0;
-        bool translated = false;
-        
-        if (pVM != nullptr) {
-            if (PGMPhysGCPtr2GCPhys != nullptr) {
-                if (PGMPhysGCPtr2GCPhys(pVM, virtualAddress, &physAddr) == 0) {
-                    translated = true;
-                }
-                if (!translated && VMMGetCpuById != nullptr) {
-                    for (int cpuId = 0; cpuId < 4 && !translated; cpuId++) {
-                        void* cpu = VMMGetCpuById(pVM, cpuId);
-                        if (cpu == nullptr) continue;
-                        if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
-                            translated = true;
-                        }
-                    }
-                }
-                if (translated && PGMPhysRead(pVM, physAddr, &var, sizeof(T)) == 0) {
-                    g_vmmMutex.unlock();
-                    return var;
-                }
-            }
-            if (PGMPhysRead != nullptr && VMM.GuestCR3 != 0) {
-                uintptr_t pa = 0;
-                TranslateVirtualToPhysical(virtualAddress, VMM.GuestCR3, pa);
-                if (pa != 0 && PGMPhysRead(pVM, pa, &var, sizeof(T)) == 0) {
-                    g_vmmMutex.unlock();
-                    return var;
-                }
-            }
-        }
-        
-        g_vmmMutex.unlock();
-        
-        // Strategy 3: ADB fallback (slow but works)
-        diag_log("Ler: falling back to ADB");
-        return LerAdb<T>(virtualAddress);
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
-        g_vmmMutex.unlock();
-        diag_log("Ler: __except, falling back to ADB");
-        return LerAdb<T>(virtualAddress);
-    }
+    return LerAdb<T>(virtualAddress);
 }
 
 template<typename T>
@@ -780,194 +735,29 @@ inline void UnloadHooks() {
     MH_Uninitialize();
 }
 
-inline void VMMFallbackScan() {
-    if (il2cpp != 0) return;
-    if (VMM.pVM == nullptr) {
-        std::cout << "[VMMFallback] Waiting for VMM init..." << std::endl;
-        for (int i = 0; i < 100; i++) {
-            Sleep(100);
-            if (VMM.pVM != nullptr) break;
-        }
-    }
-    if (VMM.pVM == nullptr) {
-        std::cout << "[VMMFallback] VMM not available" << std::endl;
-        return;
-    }
-    if (!VMMGetCpuById || !PGMPhysGCPtr2GCPhys || !PGMPhysRead) {
-        std::cout << "[VMMFallback] VMM functions not available" << std::endl;
-        return;
-    }
-    void* cpu0 = VMMGetCpuById(VMM.pVM, 0);
-    if (cpu0 == nullptr) {
-        std::cout << "[VMMFallback] CPU 0 not available" << std::endl;
-        return;
-    }
-    
-    // Try each CPU until we find il2cpp
-    void* cpus[4] = { cpu0, nullptr, nullptr, nullptr };
-    for (int i = 1; i < 4; i++)
-        cpus[i] = VMMGetCpuById(VMM.pVM, i);
-    
-    std::cout << "[VMMFallback] Scanning guest virtual memory for libil2cpp..." << std::endl;
-    DWORD startTick = GetTickCount();
-    int scannedPages = 0;
-    for (int cpuIdx = 0; cpuIdx < 4; cpuIdx++) {
-        void* cpu = cpus[cpuIdx];
-        if (cpu == nullptr) continue;
-        if (il2cpp != 0) break;
-        
-        for (uintptr_t va = 0x60000000; va < 0x90000000; va += 0x1000) {
-            if (il2cpp != 0) break;
-            if (GetTickCount() - startTick > 15000) break;
-            
-            uintptr_t physAddr = 0;
-            if (PGMPhysGCPtr2GCPhys(cpu, va, &physAddr) != 0) continue;
-            scannedPages++;
-            
-            uint32_t magic = 0;
-            if (PGMPhysRead(VMM.pVM, physAddr, &magic, sizeof(magic)) != 0) continue;
-            if (magic == 0x464C457F) {
-                il2cpp = va;
-                libunity = va;
-                UnityCpp = va;
-                std::cout << "[VMMFallback] Found ELF at 0x" << std::hex << va << " (first hit, using as il2cpp)" << std::endl;
-                break;
-            }
-        }
-    }
-    if (il2cpp == 0) {
-        std::cout << "[VMMFallback] Primary scan failed (" << scannedPages << " pages, " << (GetTickCount() - startTick) << "ms). Trying secondary range 0x10000-0x5FFFFFF..." << std::endl;
-        void* cpu = cpus[0] ? cpus[0] : (cpus[1] ? cpus[1] : cpus[2]);
-        if (cpu) {
-            for (uintptr_t va = 0x10000; va < 0x60000000 && GetTickCount() - startTick < 25000; va += 0x1000) {
-                uintptr_t physAddr = 0;
-                if (PGMPhysGCPtr2GCPhys(cpu, va, &physAddr) != 0) continue;
-                scannedPages++;
-                uint32_t magic = 0;
-                if (PGMPhysRead(VMM.pVM, physAddr, &magic, sizeof(magic)) != 0) continue;
-                if (magic == 0x464C457F) {
-                    il2cpp = va;
-                    libunity = va;
-                    UnityCpp = va;
-                    std::cout << "[VMMFallback] Found ELF at 0x" << std::hex << va << " (secondary scan)" << std::endl;
-                    break;
-                }
-            }
-        }
-    }
-    if (il2cpp == 0) {
-        std::cout << "[VMMFallback] No ELF found after " << scannedPages << " mapped pages, " << (GetTickCount() - startTick) << "ms" << std::endl;
-    }
-}
-
-static std::atomic<bool> g_vmmStarted{ false };
-
-inline void InstallHook() {
-    __try {
-        MH_Initialize();
-        MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
-        MH_EnableHook(PGMPhysRead);
-    } __except(EXCEPTION_EXECUTE_HANDLER) {}
-}
-
 inline void LoadLibraryAndHook() {
-    if (g_vmmStarted.exchange(true)) {
-        diag_log("LoadLibraryAndHook: already started, skipping");
-        return;
-    }
-    diag_log("LoadLibraryAndHook: start");
-    LPCSTR dllName = AY_OBFUSCATE("BstkVMM.dll");
-    LPCSTR fn2 = AY_OBFUSCATE("PGMPhysRead");
-    LPCSTR fn3 = AY_OBFUSCATE("PGMPhysWrite");
-    LPCSTR fn4 = AY_OBFUSCATE("PGMPhysGCPtr2GCPhys");
-    LPCSTR fn1 = AY_OBFUSCATE("VMMGetCpuById");
-    HMODULE BstkVMM = GetModuleHandleA(dllName);
-    if (BstkVMM == 0) BstkVMM = LoadLibraryA(dllName);
-    if (BstkVMM == 0) { diag_log("LoadLibraryAndHook: BstkVMM not found"); return; }
-
-    diag_log("LoadLibraryAndHook: dll loaded");
-    VMMGetCpuById = (void* (*)(void*, int))GetProcAddress(BstkVMM, fn1);
-    PGMPhysRead = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn2);
-    PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
-    PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
-    CPUMGetGuestCR3 = (uint64_t (*)(void*))GetProcAddress(BstkVMM, "CPUMGetGuestCR3");
-
-    // Use MinHook to capture pVM
-    InstallHook();
-
-    diag_log("LoadLibraryAndHook: hook installed, waiting for VMM.pVM");
-    int waitAttempts = 0;
-    while (VMM.pVM == nullptr && waitAttempts < 500) {
-        Sleep(10);
-        waitAttempts++;
-    }
-    if (VMM.pVM == nullptr) { diag_log("LoadLibraryAndHook: VMM.pVM timed out!"); return; }
-    diag_log("LoadLibraryAndHook: VMM.pVM ready");
-
-    // Get real GuestCR3 from VMM or scan VCPU memory
-    void* cpu0 = VMMGetCpuById ? VMMGetCpuById(VMM.pVM, 0) : nullptr;
-    if (cpu0 != nullptr) {
-        if (CPUMGetGuestCR3 != nullptr) {
-            VMM.GuestCR3 = CPUMGetGuestCR3(cpu0);
-            diag_log("LoadLibraryAndHook: GuestCR3 from CPUMGetGuestCR3");
-        } else {
-            // Scan VCPU memory for plausible CR3 values
-            diag_log("LoadLibraryAndHook: CPUMGetGuestCR3 not found, scanning VCPU");
-            uint64_t* scan64 = (uint64_t*)cpu0;
-            for (int i = 0; i < 4096; i++) { // scan 32KB
-                uint64_t val = scan64[i];
-                if (val == 0 || val == 1 || (val >> 32) != 0) continue;
-                uint32_t cr3_candidate = (uint32_t)(val & 0xFFFFFF000ULL);
-                if (cr3_candidate < 0x1000 || cr3_candidate > 0x7FFFFFFF) continue;
-                // Verify PDE Present bit
-                uint32_t pde = 0;
-                if (PGMPhysRead_Orig && PGMPhysRead_Orig(VMM.pVM, cr3_candidate, &pde, sizeof(pde)) == 0) {
-                    if (pde & 1) {
-                        VMM.GuestCR3 = cr3_candidate;
-                        diag_log("LoadLibraryAndHook: GuestCR3 from VCPU scan (PDE verified)");
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    if (VMM.GuestCR3 == 0) {
-        VMM.GuestCR3 = 1;
-        diag_log("LoadLibraryAndHook: GuestCR3 fallback to 1");
-    } else {
-        char gcr3buf[128]; sprintf_s(gcr3buf, "LoadLibraryAndHook: GuestCR3 = %llu", VMM.GuestCR3); diag_log(gcr3buf);
-    }
-
-    // Discover il2cpp base
-    if (il2cpp == 0) {
-        VMMFallbackScan();
-    }
-    if (il2cpp > 0x10000) {
-        char ibuf[128]; sprintf_s(ibuf, "LoadLibraryAndHook: il2cpp = 0x%llX", (unsigned long long)il2cpp); diag_log(ibuf);
-    } else {
-        diag_log("LoadLibraryAndHook: VMMFallbackScan failed to find il2cpp");
-        // Try ADB-based /proc/pid/maps (no __try, avoid C2712)
-        char portBuf[64] = {0};
-        strcpy_s(portBuf, DetectPortFromNetstat().c_str());
-        char pidCmd[256]; sprintf_s(pidCmd, "-s %s shell pidof com.dts.freefireth", portBuf);
-        std::string pidStr = ShellReturn_Adb(pidCmd); // outside __try
-        if (!pidStr.empty()) {
-            pidStr.erase(pidStr.find_last_not_of(" \n\r\t") + 1);
-            char mapsCmd[512]; sprintf_s(mapsCmd, "-s %s exec-out su -c \"cat /proc/%s/maps\" 2>/dev/null", portBuf, pidStr.c_str());
-            std::string mapsStr = ShellReturn_Adb(mapsCmd); // outside __try
-            if (!mapsStr.empty()) {
-                size_t pos = mapsStr.find("libil2cpp");
-                if (pos != std::string::npos) {
-                    size_t lineStart = mapsStr.rfind('\n', pos);
-                    if (lineStart == std::string::npos) lineStart = 0; else lineStart++;
-                    size_t hexEnd = mapsStr.find('-', lineStart);
-                    if (hexEnd != std::string::npos) {
-                        std::string hexStr = mapsStr.substr(lineStart, hexEnd - lineStart);
-                        il2cpp = strtoull(hexStr.c_str(), nullptr, 16);
-                        char ibuf[128]; sprintf_s(ibuf, "LoadLibraryAndHook: il2cpp from ADB maps = 0x%llX", (unsigned long long)il2cpp); diag_log(ibuf);
-                    }
-                } else { diag_log("LoadLibraryAndHook: libil2cpp not in maps"); }
-            } else { diag_log("LoadLibraryAndHook: ADB maps empty"); }
-        } else { diag_log("LoadLibraryAndHook: ADB pid empty"); }
-    }
+    diag_log("LoadLibraryAndHook: discovering il2cpp via ADB maps");
+    
+    char portBuf[64] = {0};
+    strcpy_s(portBuf, DetectPortFromNetstat().c_str());
+    char pidCmd[256]; sprintf_s(pidCmd, "-s %s shell pidof com.dts.freefireth", portBuf);
+    std::string pidStr = ShellReturn_Adb(pidCmd);
+    if (pidStr.empty()) { diag_log("LoadLibraryAndHook: ADB pid empty"); return; }
+    pidStr.erase(pidStr.find_last_not_of(" \n\r\t") + 1);
+    
+    char mapsCmd[512]; sprintf_s(mapsCmd, "-s %s exec-out su -c \"cat /proc/%s/maps\" 2>/dev/null", portBuf, pidStr.c_str());
+    std::string mapsStr = ShellReturn_Adb(mapsCmd);
+    if (mapsStr.empty()) { diag_log("LoadLibraryAndHook: ADB maps empty"); return; }
+    
+    size_t pos = mapsStr.find("libil2cpp");
+    if (pos == std::string::npos) { diag_log("LoadLibraryAndHook: libil2cpp not in maps"); return; }
+    
+    size_t lineStart = mapsStr.rfind('\n', pos);
+    if (lineStart == std::string::npos) lineStart = 0; else lineStart++;
+    size_t hexEnd = mapsStr.find('-', lineStart);
+    if (hexEnd == std::string::npos) { diag_log("LoadLibraryAndHook: cant parse maps line"); return; }
+    
+    std::string hexStr = mapsStr.substr(lineStart, hexEnd - lineStart);
+    il2cpp = strtoull(hexStr.c_str(), nullptr, 16);
+    char ibuf[128]; sprintf_s(ibuf, "LoadLibraryAndHook: il2cpp = 0x%llX", (unsigned long long)il2cpp); diag_log(ibuf);
 }
