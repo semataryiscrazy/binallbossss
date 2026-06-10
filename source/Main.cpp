@@ -168,6 +168,7 @@ void DesenharESP(int width, int height) {
     espOffsetX = 0; espOffsetY = 0;
     SWidth = width; SHeight = height;
     if (!Auth.AtivarFuncoes || !Auth.Attached) return;
+    UpdateEntityCache();
 
     // Cache deve estar inicializado
     uint64_t matrixTs = renderMatrixTimestamp.load();
@@ -380,9 +381,6 @@ void runRenderTick() {
     eventPoll();
     ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
 
-    static int aliveCounter = 0;
-    if (++aliveCounter % 100 == 0) diag_log("RenderLoop: alive");
-
     // --- MEMORY CHECK VERIFICATION ---
     // Periodic check for tampering/hooking
     static int integrityCheckCounter = 0;
@@ -500,7 +498,7 @@ void runRenderTick() {
                             Auth.Autenticado = true;
                             NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
                             std::thread(NetworkInit).detach();
-                            std::thread([]() { __try { Sleep(2000); diag_log("StartThread: begin"); LoadLibraryAndHook(); diag_log("StartThread: Hook done"); } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); } }).detach();
+                            std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
                         } else {
                             memset(Auth.Usuario, 0, sizeof(Auth.Usuario));
                             memset(Auth.Senha, 0, sizeof(Auth.Senha));
@@ -575,7 +573,7 @@ void runRenderTick() {
                                     Auth.Autenticado = true;
 
                                     std::thread(NetworkInit).detach();
-                            std::thread([]() { __try { Sleep(2000); diag_log("StartThread: begin"); LoadLibraryAndHook(); diag_log("StartThread: Hook done"); } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); } }).detach();
+                                    std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
                                 } else {
                                     const char* err = ka_get_error();
                                     NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no AUTH", 5.0f, true);
@@ -662,8 +660,11 @@ void runRenderTick() {
             ImGui::PopStyleVar();
         } else if (CurrentWindow == 1) {
             static bool g_AutoStarted = false;
-            // REMOVED: Post-auth dual-start. Auto-login thread already starts LoadLibraryAndHook.
-            // This caused duplicate calls, racing with the auth thread.
+            if (Auth.Autenticado && !g_AutoStarted) {
+                g_AutoStarted = true;
+                std::thread(NetworkInit).detach();
+                std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+            }
 
             JUNK(); AntiDebugCheck();
             ImGui::SetNextWindowSize(ImVec2(640, 440));
@@ -918,14 +919,6 @@ void runRenderTick() {
         SpinbotImpl::Execute(cachedLocalPlayer);
     }
 
-    // Entity cache + Aimbot features (inline, no threads)
-    if (Auth.Attached) {
-        EntityCacheTick();
-        _0xW3X4Y5Z6::Tick();
-        _0xPrecision::Tick();
-        LockAim::Tick();
-    }
-
     // -- AimLock (target tracking) --
 
     ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
@@ -1002,7 +995,6 @@ static void deep_clean_internal() {
 }
 
 static void RenderLoop() {
-    diag_log("RenderLoop: started");
     __try {
         using namespace std::chrono;
         auto lastRender = steady_clock::now();
@@ -1016,9 +1008,7 @@ static void RenderLoop() {
             }
             Sleep(PerformanceMode ? 5 : 1);
         }
-        diag_log("RenderLoop: exiting normally");
     } __except(EXCEPTION_EXECUTE_HANDLER) {
-        diag_log("RenderLoop: __except caught crash");
     }
 }
 
@@ -1105,6 +1095,7 @@ void UnloadCheat() {
 
     __try { _0xW3X4Y5Z6::Stop(); } __except(1) {}
     __try { _0xPrecision::Stop(); } __except(1) {}
+    __try { StopEntityCache(); } __except(1) {}
     __try { LockAim::Stop(); } __except(1) {}
     __try { Exploit::NoRecoil::Stop(); } __except(1) {}
 
@@ -1122,15 +1113,16 @@ void ReInject() {
     Auth.OverlayView = true;
     Auth.MenuVisible = true;
     Auth.Attached = false;
+    StopEntityCache();
     Sleep(100);
+    UpdateEntityCache();
     std::thread(NetworkInit).detach();
     std::thread([]() {
-        __try {
-            Sleep(2000);
-            diag_log("StartThread: begin");
-            LoadLibraryAndHook();
-            diag_log("StartThread: Hook done");
-        } __except(EXCEPTION_EXECUTE_HANDLER) { diag_log("StartThread: __except caught crash"); }
+        Sleep(2000);
+        LoadLibraryAndHook();
+        _0xW3X4Y5Z6::Start();
+        _0xPrecision::Start();
+        LockAim::Start();
     }).detach();
 }
 
@@ -1220,7 +1212,6 @@ static void ClearPEBDebugFlags() {
 }
 
 static void InitIdowImpl() {
-    diag_log("InitIdowImpl: start");
     // --- Anti-KG Injection Shield ---
     { HANDLE hTok; if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &hTok)) {
         TOKEN_PRIVILEGES tp; tp.PrivilegeCount = 1; tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
@@ -1417,11 +1408,6 @@ void InitIdow() {
 #include "Imports/PrecisionMode.cpp"
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
-    if (fdwReason == DLL_PROCESS_ATTACH) {
-        FILE* f = fopen("C:\\satella_dbg.txt", "w"); if (f) fclose(f);
-        diag_log("DllMain: DLL_PROCESS_ATTACH");
-        diag_log("Version: V13 - ADB fallback + diag logs");
-    }
     switch (fdwReason) {
     case DLL_PROCESS_ATTACH:
         g_hDll = hinstDLL;

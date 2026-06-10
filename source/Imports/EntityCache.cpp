@@ -41,25 +41,15 @@ static uintptr_t GetEngine() {
     if (std::chrono::duration_cast<std::chrono::milliseconds>(now - engineTimer).count() > 500) {
         engineTimer = now;
         cachedGE = 0;
-        if (il2cpp < 0x10000) { static bool once_il; if(!once_il){once_il=true;diag_log("GetEngine: il2cpp=0");} return 0; }
-        char b[128];
-        static bool once_il2; if(!once_il2){once_il2=true;sprintf_s(b,"GetEngine: il2cpp=0x%llX",(unsigned long long)il2cpp);diag_log(b);}
+        if (il2cpp < 0x10000) return 0;
         uintptr_t base = Ler<uintptr_t>(il2cpp + Offsets::InitBase);
-        if (base < 0x10000) {
-            static bool once_base; if(!once_base){once_base=true;sprintf_s(b,"GetEngine: base=0 after Ler(0x%llX)",(unsigned long long)(il2cpp+Offsets::InitBase));diag_log(b);}
-            return 0;
+        if (base != 0 && base > 0x10000) {
+            uintptr_t facade = Ler<uintptr_t>(base);
+            if (facade != 0 && facade > 0x10000) {
+                uintptr_t sf = Ler<uintptr_t>(facade + Offsets::StaticClass);
+                if (sf != 0 && sf > 0x10000) cachedGE = Ler<uintptr_t>(sf);
+            }
         }
-        uintptr_t facade = Ler<uintptr_t>(base);
-        if (facade < 0x10000) {
-            static bool once_fac; if(!once_fac){once_fac=true;sprintf_s(b,"GetEngine: facade=0 after Ler(base=0x%llX)",(unsigned long long)base);diag_log(b);}
-            return 0;
-        }
-        uintptr_t sf = Ler<uintptr_t>(facade + Offsets::StaticClass);
-        if (sf < 0x10000) {
-            static bool once_sf; if(!once_sf){once_sf=true;sprintf_s(b,"GetEngine: sf=0 after Ler(facade+0x%llX)",(unsigned long long)(facade+Offsets::StaticClass));diag_log(b);}
-            return 0;
-        }
-        cachedGE = Ler<uintptr_t>(sf);
     }
     return cachedGE;
 }
@@ -74,175 +64,194 @@ static uintptr_t GetLocal(uintptr_t ge) {
     return cachedLocal;
 }
 
-static uint64_t lastCleanup = 0;
-static int failCount = 0;
+static std::thread cacheThread;
+static std::atomic<bool> cacheRunning{ false };
 
-void EntityCacheTick() {
-    try {
-    uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (now - lastEntityUpdate < 16) return;
-
-    uintptr_t ge = GetEngine(); if (ge == 0) {
-        failCount++;
-        if (failCount == 1) {
-            diag_log("CacheLoop: GetEngine()=0 - trying again");
-        }
-        return;
+static void CacheLoop() {
+    JUNK(); JUNK_FALSE(); AntiDebugCheck();
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    if (ntdll) {
+        typedef NTSTATUS(NTAPI *NtSIT)(HANDLE,ULONG,PVOID,ULONG);
+        NtSIT pNtSIT = (NtSIT)GetProcAddress(ntdll,"NtSetInformationThread");
+        if (pNtSIT) pNtSIT(GetCurrentThread(),0x11,NULL,0);
     }
-    failCount = 0;
+    uint64_t lastCleanup = 0;
+    int failCount = 0;
+    while (cacheRunning) {
+        uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+        if (now - lastEntityUpdate < 16) { std::this_thread::sleep_for(std::chrono::milliseconds(3)); continue; }
 
-    // Atualiza camera matrix + copia atomica para render
-    uintptr_t ccm = Ler<uintptr_t>(ge + 0x74);
-    if (ccm > 0x10000) {
-        uintptr_t cam = Ler<uintptr_t>(ccm + string2Offset(AY_OBFUSCATE("0x10")));
-        if (cam > 0x10000) {
-            uintptr_t ic = Ler<uintptr_t>(cam + string2Offset(AY_OBFUSCATE("0x8")));
-            if (ic > 0x10000) {
-                cachedMatrix = Ler<UnityMatrix>(ic + Offsets::ViewMatrix);
-                cachedScreenW = SWidth; cachedScreenH = SHeight;
-                uint64_t gen = renderMatrixGen.load(std::memory_order_relaxed);
-                renderMatrixGen.store(gen + 1, std::memory_order_release);
-                renderMatrix = cachedMatrix;
-                renderMatrixTimestamp.store(now, std::memory_order_release);
-                renderMatrixGen.store(gen + 2, std::memory_order_release);
+        uintptr_t ge = GetEngine(); if (ge == 0) {
+            failCount++;
+            if (failCount > 60) { // ~3s sem engine = conexao perdida
+                Auth.Attached = false;
+                failCount = 0;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue;
+        }
+        failCount = 0;
+
+        // Atualiza camera matrix + copia atomica para render
+        uintptr_t ccm = Ler<uintptr_t>(ge + 0x74);
+        if (ccm > 0x10000) {
+            uintptr_t cam = Ler<uintptr_t>(ccm + string2Offset(AY_OBFUSCATE("0x10")));
+            if (cam > 0x10000) {
+                uintptr_t ic = Ler<uintptr_t>(cam + string2Offset(AY_OBFUSCATE("0x8")));
+                if (ic > 0x10000) {
+                    cachedMatrix = Ler<UnityMatrix>(ic + Offsets::ViewMatrix);
+                    cachedScreenW = SWidth; cachedScreenH = SHeight;
+                    uint64_t gen = renderMatrixGen.load(std::memory_order_relaxed);
+                    renderMatrixGen.store(gen + 1, std::memory_order_release);
+                    renderMatrix = cachedMatrix;
+                    renderMatrixTimestamp.store(now, std::memory_order_release);
+                    renderMatrixGen.store(gen + 2, std::memory_order_release);
+                }
             }
         }
-    }
 
-    cachedLocalPlayer = GetLocal(ge);
-    if (cachedLocalPlayer == 0) {
-        {
+        cachedLocalPlayer = GetLocal(ge);
+        if (cachedLocalPlayer == 0) {
+            // Partida encerrou — limpa cache pra ESP nao ficar travado
+            {
+                std::lock_guard<std::mutex> lock(g_cacheSwapMutex);
+                g_cacheBack.clear();
+                g_cacheFront.clear();
+                g_entityCount.store(0);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            continue;
+        }
+
+        lastEntityUpdate = now;
+
+        // Cleanup stale entries a cada 5s (nao bloqueia swap)
+        if (now - lastCleanup > 5000) {
+            lastCleanup = now;
             std::lock_guard<std::mutex> lock(g_cacheSwapMutex);
-            g_cacheBack.clear();
-            g_cacheFront.clear();
-            g_entityCount.store(0);
+            for (auto it = g_cacheBack.begin(); it != g_cacheBack.end();)
+                if (now - it->second.lastUpdate > 10000) it = g_cacheBack.erase(it); else ++it;
         }
-        return;
-    }
 
-    lastEntityUpdate = now;
+        uintptr_t dict = Ler<uintptr_t>(ge + Offsets::DictionaryEntities); if (dict == 0) { g_cacheBack.clear(); SwapEntityCache(); continue; }
+        uintptr_t list = Ler<uintptr_t>(dict + Offsets::Il2CppDictionaryDataPtr); if (list == 0) { g_cacheBack.clear(); SwapEntityCache(); continue; }
+        list += 0x10;
+        int cnt = Ler<int>(dict + Offsets::Il2CppDictionaryCount); if (cnt < 1 || cnt > 200) { g_cacheBack.clear(); SwapEntityCache(); continue; }
 
-    if (now - lastCleanup > 5000) {
-        lastCleanup = now;
-        std::lock_guard<std::mutex> lock(g_cacheSwapMutex);
-        for (auto it = g_cacheBack.begin(); it != g_cacheBack.end();)
-            if (now - it->second.lastUpdate > 10000) it = g_cacheBack.erase(it); else ++it;
-    }
+        Vector3 myPos = Transform_ObterPosicao(Ler<uintptr_t>(cachedLocalPlayer + Offsets::MainTransform));
 
-    uintptr_t dict = Ler<uintptr_t>(ge + Offsets::DictionaryEntities); if (dict == 0) { g_cacheBack.clear(); SwapEntityCache(); return; }
-    uintptr_t list = Ler<uintptr_t>(dict + Offsets::Il2CppDictionaryDataPtr); if (list == 0) { g_cacheBack.clear(); SwapEntityCache(); return; }
-    list += 0x10;
-    int cnt = Ler<int>(dict + Offsets::Il2CppDictionaryCount); if (cnt < 1 || cnt > 200) { g_cacheBack.clear(); SwapEntityCache(); return; }
+    for (int i = 0; i < cnt; i++) {
+        uintptr_t e = Ler<uintptr_t>(list + (i * 0x10) + 0xC);
+        if (e == 0 || e == cachedLocalPlayer) continue;
 
-    Vector3 myPos = Transform_ObterPosicao(Ler<uintptr_t>(cachedLocalPlayer + Offsets::MainTransform));
+        EntityData fr;
+        uintptr_t am = Ler<uintptr_t>(e + Offsets::AvatarManager); if (am == 0 || am < 0x10000) continue;
+        uintptr_t uas = Ler<uintptr_t>(am + Offsets::UmaAvatarSimple); if (uas == 0 || uas < 0x10000) continue;
+        uintptr_t ud = Ler<uintptr_t>(uas + Offsets::UMAData); if (ud == 0 || ud < 0x10000) continue;
+        if (Ler<int>(e + string2Offset(AY_OBFUSCATE("0xC1C"))) == 0)
+            if (!Ler<bool>(uas + Offsets::Avatar_IsVisible)) continue;
+        uintptr_t pri = Ler<uintptr_t>(e + Offsets::PRIDataPool); if (pri == 0 || pri < 0x10000) continue;
+        uintptr_t rdu = Ler<uintptr_t>(Ler<uintptr_t>(pri + Offsets::ReplicationDataPoolUnsafe) + Offsets::ReplicationDataUnsafe); if (rdu == 0 || rdu < 0x10000) continue;
+        fr.health = Ler<short>(rdu + Offsets::Health); if (fr.health <= 0) continue;
 
-for (int i = 0; i < cnt; i++) {
-    uintptr_t e = Ler<uintptr_t>(list + (i * 0x10) + 0xC);
-    if (e == 0 || e == cachedLocalPlayer) continue;
+        fr.address = e;
+        fr.dying = false;
+        fr.garota = Ler<bool>(e + Offsets::CDOBMFNCJHD);
+        uintptr_t pd = Ler<uintptr_t>(e + Offsets::Player_Data);
+        if (pd != 0 && pd > 0x10000) fr.dying = (Ler<int>(pd + Offsets::Player_IsDead) == 8);
+        fr.isTeam = Ler<bool>(ud + Offsets::TeamMate);
 
-    EntityData fr;
-    uintptr_t am = Ler<uintptr_t>(e + Offsets::AvatarManager); if (am == 0 || am < 0x10000) continue;
-    uintptr_t uas = Ler<uintptr_t>(am + Offsets::UmaAvatarSimple); if (uas == 0 || uas < 0x10000) continue;
-    uintptr_t ud = Ler<uintptr_t>(uas + Offsets::UMAData); if (ud == 0 || ud < 0x10000) continue;
-    if (Ler<int>(e + string2Offset(AY_OBFUSCATE("0xC1C"))) == 0)
-        if (!Ler<bool>(uas + Offsets::Avatar_IsVisible)) continue;
-    uintptr_t pri = Ler<uintptr_t>(e + Offsets::PRIDataPool); if (pri == 0 || pri < 0x10000) continue;
-    uintptr_t rdu = Ler<uintptr_t>(Ler<uintptr_t>(pri + Offsets::ReplicationDataPoolUnsafe) + Offsets::ReplicationDataUnsafe); if (rdu == 0 || rdu < 0x10000) continue;
-    fr.health = Ler<short>(rdu + Offsets::Health); if (fr.health <= 0) continue;
+        fr.headPos = GetHeadPosition(e); if (fr.headPos.X == 0 && fr.headPos.Y == 0 && fr.headPos.Z == 0) continue;
+        fr.bodyPos = GetPlayerPosition(e, 0);
+        fr.dist = Vector3::Distance(fr.bodyPos, myPos);
 
-    fr.address = e;
-    fr.dying = false;
-    fr.garota = Ler<bool>(e + Offsets::CDOBMFNCJHD);
-    uintptr_t pd = Ler<uintptr_t>(e + Offsets::Player_Data);
-    if (pd != 0 && pd > 0x10000) fr.dying = (Ler<int>(pd + Offsets::Player_IsDead) == 8);
-    fr.isTeam = Ler<bool>(ud + Offsets::TeamMate);
+        Vector3 sb = World2Screen(cachedMatrix, fr.bodyPos);
+        Vector3 sh = World2Screen(cachedMatrix, fr.headPos);
+        if (sb.Z != 0 || sh.Z != 0) continue;
+        fr.screenBody = sb; fr.screenHead = sh;
 
-    fr.headPos = GetHeadPosition(e); if (fr.headPos.X == 0 && fr.headPos.Y == 0 && fr.headPos.Z == 0) continue;
-    fr.bodyPos = GetPlayerPosition(e, 0);
-    fr.dist = Vector3::Distance(fr.bodyPos, myPos);
-
-    Vector3 sb = World2Screen(cachedMatrix, fr.bodyPos);
-    Vector3 sh = World2Screen(cachedMatrix, fr.headPos);
-    if (sb.Z != 0 || sh.Z != 0) continue;
-    fr.screenBody = sb; fr.screenHead = sh;
-
-    auto bpi = Ler<uintptr_t>(e + Offsets::Player_Name);
-    if (bpi != 0) {
-        auto pn = Ler<uintptr_t>(bpi + string2Offset(AY_OBFUSCATE("0x18")));
-        if (pn != 0) {
-            int nc = Ler<int>(pn + string2Offset(AY_OBFUSCATE("0x8")));
-            fr.name = ObterStr(pn + string2Offset(AY_OBFUSCATE("0xC")), nc);
+        auto bpi = Ler<uintptr_t>(e + Offsets::Player_Name);
+        if (bpi != 0) {
+            auto pn = Ler<uintptr_t>(bpi + string2Offset(AY_OBFUSCATE("0x18")));
+            if (pn != 0) {
+                int nc = Ler<int>(pn + string2Offset(AY_OBFUSCATE("0x8")));
+                fr.name = ObterStr(pn + string2Offset(AY_OBFUSCATE("0xC")), nc);
+            }
         }
-    }
 
-    // Weapon name
-    {
-        uintptr_t wpn = Ler<uintptr_t>(e + Offsets::Weapon);
-        if (wpn > 0x10000) {
-            uintptr_t wpnd = Ler<uintptr_t>(wpn + Offsets::WeaponData);
-            if (wpnd > 0x10000) {
-                auto wpnBpi = Ler<uintptr_t>(wpnd + string2Offset(AY_OBFUSCATE("0x8")));
-                if (wpnBpi != 0) {
-                    auto wpnPn = Ler<uintptr_t>(wpnBpi + string2Offset(AY_OBFUSCATE("0x18")));
-                    if (wpnPn != 0) {
-                        int wpnNc = Ler<int>(wpnPn + string2Offset(AY_OBFUSCATE("0x8")));
-                        fr.weaponName = ObterStr(wpnPn + string2Offset(AY_OBFUSCATE("0xC")), wpnNc);
+        // Weapon name
+        {
+            uintptr_t wpn = Ler<uintptr_t>(e + Offsets::Weapon);
+            if (wpn > 0x10000) {
+                uintptr_t wpnd = Ler<uintptr_t>(wpn + Offsets::WeaponData);
+                if (wpnd > 0x10000) {
+                    auto wpnBpi = Ler<uintptr_t>(wpnd + string2Offset(AY_OBFUSCATE("0x8")));
+                    if (wpnBpi != 0) {
+                        auto wpnPn = Ler<uintptr_t>(wpnBpi + string2Offset(AY_OBFUSCATE("0x18")));
+                        if (wpnPn != 0) {
+                            int wpnNc = Ler<int>(wpnPn + string2Offset(AY_OBFUSCATE("0x8")));
+                            fr.weaponName = ObterStr(wpnPn + string2Offset(AY_OBFUSCATE("0xC")), wpnNc);
+                        }
                     }
                 }
             }
         }
-    }
 
-    fr.hasBones = false;
-    if (ESPEsqueleto) {
-        static const uintptr_t maleBO[18] = {
-            string2Offset(AY_OBFUSCATE("0x38")),string2Offset(AY_OBFUSCATE("0x14")),string2Offset(AY_OBFUSCATE("0x10")),string2Offset(AY_OBFUSCATE("0x48")),
-            string2Offset(AY_OBFUSCATE("0x18")),string2Offset(AY_OBFUSCATE("0x1C")),string2Offset(AY_OBFUSCATE("0x20")),string2Offset(AY_OBFUSCATE("0x24")),
-            string2Offset(AY_OBFUSCATE("0x28")),string2Offset(AY_OBFUSCATE("0x2C")),string2Offset(AY_OBFUSCATE("0x30")),string2Offset(AY_OBFUSCATE("0x34")),
-            string2Offset(AY_OBFUSCATE("0x3C")),string2Offset(AY_OBFUSCATE("0x40")),string2Offset(AY_OBFUSCATE("0x44")),string2Offset(AY_OBFUSCATE("0x4C")),
-            string2Offset(AY_OBFUSCATE("0x50")),string2Offset(AY_OBFUSCATE("0x54"))
-        };
-        static const uintptr_t femaleBO[18] = {
-            string2Offset(AY_OBFUSCATE("0x3C")),string2Offset(AY_OBFUSCATE("0x18")),string2Offset(AY_OBFUSCATE("0x14")),string2Offset(AY_OBFUSCATE("0x10")),
-            string2Offset(AY_OBFUSCATE("0x1C")),string2Offset(AY_OBFUSCATE("0x20")),string2Offset(AY_OBFUSCATE("0x24")),string2Offset(AY_OBFUSCATE("0x28")),
-            string2Offset(AY_OBFUSCATE("0x2C")),string2Offset(AY_OBFUSCATE("0x30")),string2Offset(AY_OBFUSCATE("0x34")),string2Offset(AY_OBFUSCATE("0x38")),
-            string2Offset(AY_OBFUSCATE("0x40")),string2Offset(AY_OBFUSCATE("0x44")),string2Offset(AY_OBFUSCATE("0x48")),string2Offset(AY_OBFUSCATE("0x4C")),
-            string2Offset(AY_OBFUSCATE("0x50")),string2Offset(AY_OBFUSCATE("0x54"))
-        };
-        const uintptr_t* bo = fr.garota ? femaleBO : maleBO;
-        fr.hasBones = true;
-        for (int j = 0; j < 18; j++) {
-            Vector3 wpos = ObterOssos(e, bo[j]);
-            fr.boneWorld[j] = wpos;
-            fr.bones[j] = World2Screen(cachedMatrix, wpos);
+        fr.hasBones = false;
+        if (ESPEsqueleto) {
+            static const uintptr_t maleBO[18] = {
+                string2Offset(AY_OBFUSCATE("0x38")),string2Offset(AY_OBFUSCATE("0x14")),string2Offset(AY_OBFUSCATE("0x10")),string2Offset(AY_OBFUSCATE("0x48")),
+                string2Offset(AY_OBFUSCATE("0x18")),string2Offset(AY_OBFUSCATE("0x1C")),string2Offset(AY_OBFUSCATE("0x20")),string2Offset(AY_OBFUSCATE("0x24")),
+                string2Offset(AY_OBFUSCATE("0x28")),string2Offset(AY_OBFUSCATE("0x2C")),string2Offset(AY_OBFUSCATE("0x30")),string2Offset(AY_OBFUSCATE("0x34")),
+                string2Offset(AY_OBFUSCATE("0x3C")),string2Offset(AY_OBFUSCATE("0x40")),string2Offset(AY_OBFUSCATE("0x44")),string2Offset(AY_OBFUSCATE("0x4C")),
+                string2Offset(AY_OBFUSCATE("0x50")),string2Offset(AY_OBFUSCATE("0x54"))
+            };
+            static const uintptr_t femaleBO[18] = {
+                string2Offset(AY_OBFUSCATE("0x3C")),string2Offset(AY_OBFUSCATE("0x18")),string2Offset(AY_OBFUSCATE("0x14")),string2Offset(AY_OBFUSCATE("0x10")),
+                string2Offset(AY_OBFUSCATE("0x1C")),string2Offset(AY_OBFUSCATE("0x20")),string2Offset(AY_OBFUSCATE("0x24")),string2Offset(AY_OBFUSCATE("0x28")),
+                string2Offset(AY_OBFUSCATE("0x2C")),string2Offset(AY_OBFUSCATE("0x30")),string2Offset(AY_OBFUSCATE("0x34")),string2Offset(AY_OBFUSCATE("0x38")),
+                string2Offset(AY_OBFUSCATE("0x40")),string2Offset(AY_OBFUSCATE("0x44")),string2Offset(AY_OBFUSCATE("0x48")),string2Offset(AY_OBFUSCATE("0x4C")),
+                string2Offset(AY_OBFUSCATE("0x50")),string2Offset(AY_OBFUSCATE("0x54"))
+            };
+            const uintptr_t* bo = fr.garota ? femaleBO : maleBO;
+            fr.hasBones = true;
+            for (int j = 0; j < 18; j++) {
+                Vector3 wpos = ObterOssos(e, bo[j]);
+                fr.boneWorld[j] = wpos;
+                fr.bones[j] = World2Screen(cachedMatrix, wpos);
+            }
         }
+
+        fr.valid = true;
+        fr.lastUpdate = now;
+        g_cacheBack[e] = fr;
     }
 
-    fr.valid = true;
-    fr.lastUpdate = now;
-    g_cacheBack[e] = fr;
-}
-
-    if (!g_cacheBack.empty()) {
-        uint64_t flickerGuard = now - 100;
-        for (auto& [addr, old] : g_cacheFront) {
-            if (old.valid && old.lastUpdate > flickerGuard && old.health > 0) {
-                if (g_cacheBack.find(addr) == g_cacheBack.end()) {
-                    g_cacheBack[addr] = old;
+        // Anti-flicker: keep entities valid within 100ms, but don't refresh lastUpdate
+        if (!g_cacheBack.empty()) {
+            uint64_t flickerGuard = now - 100;
+            for (auto& [addr, old] : g_cacheFront) {
+                if (old.valid && old.lastUpdate > flickerGuard && old.health > 0) {
+                    if (g_cacheBack.find(addr) == g_cacheBack.end()) {
+                        g_cacheBack[addr] = old;
+                    }
                 }
             }
         }
-    }
 
-    SwapEntityCache();
-    } catch (...) { return; }
+        // Swap back to front atomically
+        SwapEntityCache();
+    }
 }
 
 void UpdateEntityCache() {
-    // No-op: entity cache now runs inline via EntityCacheTick()
+    if (!cacheRunning) {
+        cacheRunning = true;
+        cacheThread = std::thread(CacheLoop);
+    }
 }
 
 void StopEntityCache() {
-    // No-op: no thread to stop
+    cacheRunning = false;
+    if (cacheThread.joinable()) cacheThread.join();
 }

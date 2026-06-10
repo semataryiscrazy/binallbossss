@@ -1,24 +1,10 @@
 ﻿#pragma once
-#include <mutex>
-#include <functional>
-#include <sstream>
-#include <string>
-#include <algorithm>
 #include <windows.h>
-#include <shlwapi.h>
-#include <process.h>
 #include <cmath>
-#include <cstdio>
-#include "Cfg/strenc.h"
-#include "Cfg/encrypt.hh"
-#include "Cfg/minhook/MinHook.h"
-#include "Cfg/minhook/hde/hde64.h"
 
-inline void diag_log(const char* msg) {
-    FILE* f = fopen("C:\\satella_dbg.txt", "a");
-    if (f) { fprintf(f, "%u: %s\n", GetTickCount(), msg); fflush(f); fclose(f); }
-    OutputDebugStringA(msg);
-}
+// Forward declarations for Ler/Escrever templates
+template<typename T> T Ler(uint32_t virtualAddress);
+template<typename T> void Escrever(uint32_t virtualAddress, T value);
 
 // Proccess
 inline uintptr_t il2cpp = 0x0;
@@ -187,58 +173,32 @@ inline std::string Shell_Return(const char* cmd) {
 
 
 inline void ShellQuiet_Adb(const char* cmd) {
-    std::string AdbPath = ObterLocalDeInstalacao(GetCurrentProcessId());
-    std::string fullCmd = "\"" + AdbPath + "\\HD-Adb\" " + cmd;
-    if (GetFileAttributesA((AdbPath + "\\HD-Adb.exe").c_str()) == INVALID_FILE_ATTRIBUTES) {
-        static const char* altPaths[] = {
-            "C:\\Program Files\\BlueStacks_nxt\\HD-Adb.exe",
-            "C:\\Program Files\\BlueStacks\\HD-Adb.exe"
-        };
-        for (auto& p : altPaths) {
-            if (GetFileAttributesA(p) != INVALID_FILE_ATTRIBUTES) {
-                std::string dir = p;
-                dir.erase(dir.rfind('\\'));
-                fullCmd = "\"" + dir + "\\HD-Adb\" " + cmd;
-                break;
-            }
-        }
-    }
-    ShellQuiet(fullCmd.c_str());
+    std::string AdbPath = ObterLocalDeInstalacao(_getpid());
+    AdbPath += AY_OBFUSCATE("\\HD-Adb ");
+    AdbPath += cmd;
+    ShellQuiet(AdbPath.c_str());
 }
 
 inline std::string ShellReturn_Adb(const char* cmd) {
-    std::string AdbPath = ObterLocalDeInstalacao(GetCurrentProcessId());
-    std::string fullCmd = "\"" + AdbPath + "\\HD-Adb\" " + cmd;
-    if (GetFileAttributesA((AdbPath + "\\HD-Adb.exe").c_str()) == INVALID_FILE_ATTRIBUTES) {
-        static const char* altPaths[] = {
-            "C:\\Program Files\\BlueStacks_nxt\\HD-Adb.exe",
-            "C:\\Program Files\\BlueStacks\\HD-Adb.exe"
-        };
-        for (auto& p : altPaths) {
-            if (GetFileAttributesA(p) != INVALID_FILE_ATTRIBUTES) {
-                std::string dir = p;
-                dir.erase(dir.rfind('\\'));
-                fullCmd = "\"" + dir + "\\HD-Adb\" " + cmd;
-                break;
-            }
-        }
-    }
-    return Shell_Return(fullCmd.c_str());
+    std::string AdbPath = ObterLocalDeInstalacao(_getpid());
+    AdbPath = "\"" + AdbPath + "\\HD-Adb\" ";
+    AdbPath += cmd;
+    return Shell_Return(AdbPath.c_str());
 }
 
 
 inline void ShellReturn_HDPlayer(const char* cmd) {
-    std::string AdbPath = ObterLocalDeInstalacao(GetCurrentProcessId());
-    AdbPath += (const char*)AY_OBFUSCATE("\\HD-Player ");
+    std::string AdbPath = ObterLocalDeInstalacao(_getpid());
+    AdbPath += AY_OBFUSCATE("\\HD-Player ");
     AdbPath += cmd;
     ShellQuiet(AdbPath.c_str());
 }
 
 inline std::string DetectPortFromNetstat() {
-    DWORD pid = GetCurrentProcessId();
+    DWORD pid = _getpid();
     std::string cmd = "cmd /c netstat -ano | findstr LISTENING";
     std::string output = Shell_Return(cmd.c_str());
-    if (output.empty()) return "127.0.0.1:5555";
+    if (output.empty()) return "";
 
     std::istringstream stream(output);
     std::string line;
@@ -277,8 +237,7 @@ inline std::string DetectPortFromNetstat() {
         }
     }
 
-    if (!fallback.empty()) return fallback;
-    return "127.0.0.1:5555";
+    return fallback;
 }
 
 inline ABIType DetectABIFromAndroid() {
@@ -332,10 +291,6 @@ inline bool ConnectEmulator() {
     return Conectado;
 }
 
-// ─── Forward declarations for Ler/Escrever ───
-template<typename T> T Ler(uint32_t virtualAddress);
-template<typename T> void Escrever(uint32_t virtualAddress, T value);
-
 // ─── AOB Scan & Patch ───
 struct AOBPattern {
     const uint8_t* search;
@@ -383,13 +338,13 @@ inline bool AOBApply(const AOBPattern& p, uintptr_t base, size_t libSize) {
 inline uintptr_t ObterEnderecoDaBiblioteca(const char* libName) {
 
     std::string pid;
-    pid = (const char*)AY_OBFUSCATE("-s ") + DetectPortFromNetstat();
-    pid += (const char*)AY_OBFUSCATE(" shell pidof com.dts.freefireth");
+    pid += AY_OBFUSCATE("-s ") + DetectPortFromNetstat().c_str();
+    pid += AY_OBFUSCATE(" shell pidof com.dts.freefireth");
     pid = ShellReturn_Adb(pid.c_str());
     pid.erase(pid.find_last_not_of(" \n\r\t") + 1);
 
     char command[256];
-    sprintf_s(command, (const char*)AY_OBFUSCATE("-s %s shell /boot/android/android/system/xbin/bstk/su 0 busybox cat /proc/%s/maps"), DetectPortFromNetstat().c_str(), pid.c_str());
+    sprintf_s(command, AY_OBFUSCATE("-s %s shell /boot/android/android/system/xbin/bstk/su 0 busybox cat /proc/%s/maps"), DetectPortFromNetstat().c_str(), pid.c_str());
 
     std::string output = ShellReturn_Adb(command);
 
@@ -424,7 +379,7 @@ inline uintptr_t ObterEnderecoDaBiblioteca(const char* libName) {
 inline struct {
     void* pVM = NULL;
     uint64_t GuestCR3 = 0;
-    uintptr_t PhysicalBase = 0;      // Base f�sica do libil2cpp.so
+    uintptr_t PhysicalBase = 0;      // Base fÃ­sica do libil2cpp.so
     uintptr_t VirtualBase = 0;       // Base virtual do libil2cpp.so
     bool UseDirectMapping = false;   // Se true, usa mapeamento direto
 } VMM;
@@ -433,20 +388,13 @@ inline void* (*VMMGetCpuById)(void* pVM, int idCpu);
 inline int (*PGMPhysRead)(void* pVM, uintptr_t GCPhys, void* pvBuf, size_t bufSize);
 inline int (*PGMPhysWrite)(void* pVM, uintptr_t GCPhys, void* pvBuf, size_t bufSize);
 inline uint64_t(*CPUMGetGuestCR3)(void* pVCpu);
-inline int (*PGMPhysGCPtr2GCPhys)(void* pVM, uintptr_t GCPtr, uintptr_t* pGCPhys);  // PVM ou PVCpu
+inline int (*PGMPhysGCPtr2GCPhys)(void* pVCpu, uintptr_t GCPtr, uintptr_t* pGCPhys);  // NOVA FUNÃ‡ÃƒO!
 
 inline int (*PGMPhysRead_Orig)(void* pVM, uintptr_t GCPhys, void* pvBuf, size_t bufSize);
-inline std::atomic<int> g_hookCallCount{ 0 };
 inline int PGMPhysReadHook(void* pVM, uintptr_t GCPhys, void* pvBuf, size_t bufSize) {
-    if (g_hookCallCount++ == 0) {
-        VMM.pVM = pVM;
-        diag_log("PGMPhysReadHook: pVM captured");
-    }
+    VMM.pVM = pVM;
     return PGMPhysRead_Orig(pVM, GCPhys, pvBuf, bufSize);
 }
-
-// Global mutex to serialize all VMM access across threads
-inline std::recursive_mutex g_vmmMutex;
 
 template<typename T>
 T ReadPhysicalMemory(uintptr_t physicalAddress) {
@@ -599,18 +547,24 @@ inline uintptr_t EnderecoVirtualParaFisico32(uint64_t guestCR3, uint32_t virtual
 }
 
 inline uintptr_t TranslateVirtualToPhysical(uintptr_t va, uintptr_t cr3, uintptr_t& pa) {
-    // Usa o ABI detectado para escolher o formato de page table
+    // FORÃ‡AR modo 32 bits para Free Fire no BlueStacks
+    // O Free Fire sempre roda em 32 bits mesmo em emuladores x86_64
+    if (va < 0x100000000ULL) {
+        // EndereÃ§o virtual Ã© 32 bits, usar traduÃ§Ã£o 32 bits
+        pa = EnderecoVirtualParaFisico32(cr3, static_cast<uint32_t>(va));
+        return pa;
+    }
+    
+    // Fallback para 64 bits se o endereÃ§o for realmente 64 bits
     switch (VMM_ABI) {
     case ABIType::X86_64:
     case ABIType::ARM64:
-        // Long mode: 4-level page tables, mesmo para enderecos <4GB
         pa = EnderecoVirtualParaFisico64(cr3, va);
         return pa;
 
     case ABIType::X86:
     case ABIType::ARM32: {
-        // Protected mode: 2-level page tables
-        pa = EnderecoVirtualParaFisico32(static_cast<uint32_t>(cr3), static_cast<uint32_t>(va));
+        pa = EnderecoVirtualParaFisico32(cr3, static_cast<uint32_t>(va));
         return pa;
     }
 
@@ -619,111 +573,45 @@ inline uintptr_t TranslateVirtualToPhysical(uintptr_t va, uintptr_t cr3, uintptr
     }
 }
 
-// ─── ADB Memory Reader (fallback quando VMM falha) ───
-inline std::unordered_map<uint32_t, std::vector<uint8_t>> g_adbCache;
-inline std::string g_adbPid;
-inline uint64_t g_adbLastCleanup = 0;
-
-inline bool AdbFetchPage(uint32_t pageBase) {
-    if (g_adbCache.find(pageBase) != g_adbCache.end()) return true;
-    
-    if (g_adbPid.empty()) {
-        std::string port = DetectPortFromNetstat();
-        diag_log("AdbFetchPage: port detected");
-        std::string cmd = "-s " + port + " shell pidof com.dts.freefireth";
-        g_adbPid = ShellReturn_Adb(cmd.c_str());
-        g_adbPid.erase(g_adbPid.find_last_not_of(" \n\r\t") + 1);
-        diag_log(("AdbFetchPage: pid='" + g_adbPid + "'").c_str());
-        if (g_adbPid.empty()) { diag_log("AdbFetchPage: FAIL - empty pid"); return false; }
-    }
-    
-    char cmd[512];
-    std::string port2 = DetectPortFromNetstat();
-    sprintf_s(cmd, "-s %s exec-out su -c \"dd if=/proc/%s/mem bs=4096 skip=%u count=1 2>/dev/null\" | xxd -p",
-        port2.c_str(), g_adbPid.c_str(), pageBase / 4096);
-    
-    diag_log(("AdbFetchPage: reading page=" + std::to_string(pageBase / 4096)).c_str());
-    std::string output = ShellReturn_Adb(cmd);
-    if (output.empty()) { diag_log("AdbFetchPage: FAIL - empty output from adb"); return false; }
-    
-    output.erase(std::remove_if(output.begin(), output.end(), ::isspace), output.end());
-    if (output.size() < 4) { diag_log(("AdbFetchPage: FAIL - too short hex=" + output).c_str()); return false; }
-    std::vector<uint8_t> page(4096, 0);
-    size_t hexLen = output.size();
-    for (size_t i = 0; i < 4096 && i * 2 + 1 < hexLen; i++) {
-        auto hexPair = output.substr(i * 2, 2);
-        page[i] = (uint8_t)strtol(hexPair.c_str(), nullptr, 16);
-    }
-    g_adbCache[pageBase] = std::move(page);
-    diag_log(("AdbFetchPage: OK page=" + std::to_string(pageBase / 4096)).c_str());
-    return true;
-}
-
-inline void AdbClearCache() { g_adbCache.clear(); }
-
-template<typename T>
-inline T LerAdb(uint32_t addr) {
-    T var{};
-    uint32_t pageBase = addr & ~0xFFF;
-    if (!AdbFetchPage(pageBase)) return var;
-    auto& page = g_adbCache[pageBase];
-    uint32_t off = addr & 0xFFF;
-    if (off + sizeof(T) > 4096) return var;
-    memcpy(&var, &page[off], sizeof(T));
-    return var;
-}
-
 template<typename T>
 T Ler(uint32_t virtualAddress) {
-    return LerAdb<T>(virtualAddress);
+    T var{};
+    void* pVM = VMM.pVM;
+    
+    if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
+        // Tentar converter usando mÃºltiplas CPUs (como o projeto funcional faz)
+        for (int cpuId = 0; cpuId < 4; cpuId++) {
+            void* cpu = VMMGetCpuById(pVM, cpuId);
+            if (cpu == nullptr) continue;
+            
+            uintptr_t physAddr = 0;
+            if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
+                if (PGMPhysRead(pVM, physAddr, &var, sizeof(T)) == 0) {
+                    return var;
+                }
+            }
+        }
+    }
+    
+    return T();
 }
 
 template<typename T>
 void Escrever(uint32_t virtualAddress, T value) {
-    g_vmmMutex.lock();
-    __try {
-        void* pVM = VMM.pVM;
-        uintptr_t physAddr = 0;
-        bool translated = false;
-        
-        if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
-            // Try pVM first (common VMM signature)
-            if (PGMPhysGCPtr2GCPhys(pVM, virtualAddress, &physAddr) == 0) {
-                translated = true;
-            }
+    void* pVM = VMM.pVM;
+    
+    if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
+        // Tentar converter usando mÃºltiplas CPUs
+        for (int cpuId = 0; cpuId < 4; cpuId++) {
+            void* cpu = VMMGetCpuById(pVM, cpuId);
+            if (cpu == nullptr) continue;
             
-            // If pVM failed, try each VCPU (some VMM versions take VCPU)
-            if (!translated && VMMGetCpuById != nullptr) {
-                for (int cpuId = 0; cpuId < 4 && !translated; cpuId++) {
-                    void* cpu = VMMGetCpuById(pVM, cpuId);
-                    if (cpu == nullptr) continue;
-                    if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
-                        translated = true;
-                    }
-                }
-            }
-            
-            if (translated) {
+            uintptr_t physAddr = 0;
+            if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
                 PGMPhysWrite(pVM, physAddr, &value, sizeof(T));
-                g_vmmMutex.unlock();
                 return;
             }
         }
-        
-        // Fallback: manual page table walk
-        if (pVM != nullptr && PGMPhysWrite != nullptr && VMM.GuestCR3 != 0) {
-            uintptr_t pa = 0;
-            TranslateVirtualToPhysical(virtualAddress, VMM.GuestCR3, pa);
-            if (pa != 0) {
-                PGMPhysWrite(pVM, pa, &value, sizeof(T));
-                g_vmmMutex.unlock();
-                return;
-            }
-        }
-        
-        g_vmmMutex.unlock();
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
-        g_vmmMutex.unlock();
     }
 }
 
@@ -736,28 +624,29 @@ inline void UnloadHooks() {
 }
 
 inline void LoadLibraryAndHook() {
-    diag_log("LoadLibraryAndHook: discovering il2cpp via ADB maps");
+    HMODULE BstkVMM = GetModuleHandleA(AY_OBFUSCATE("BstkVMM.dll"));
+    if (BstkVMM == 0) BstkVMM = LoadLibraryA(AY_OBFUSCATE("BstkVMM.dll"));
+    if (BstkVMM == 0) return;
+    LPCSTR fn1 = AY_OBFUSCATE("VMMGetCpuById");
+    LPCSTR fn2 = AY_OBFUSCATE("PGMPhysRead");
+    LPCSTR fn3 = AY_OBFUSCATE("PGMPhysWrite");
+    LPCSTR fn4 = AY_OBFUSCATE("PGMPhysGCPtr2GCPhys");
+    VMMGetCpuById = (void* (*)(void*, int))GetProcAddress(BstkVMM, fn1);
+    PGMPhysRead = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn2);
+    PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
+    PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
+
+    MH_Initialize();
+    MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig);
+    MH_EnableHook(PGMPhysRead);
+
+    int waitAttempts = 0;
+    while (VMM.pVM == nullptr && waitAttempts < 500) {
+        Sleep(10);
+        waitAttempts++;
+    }
     
-    char portBuf[64] = {0};
-    strcpy_s(portBuf, DetectPortFromNetstat().c_str());
-    char pidCmd[256]; sprintf_s(pidCmd, "-s %s shell pidof com.dts.freefireth", portBuf);
-    std::string pidStr = ShellReturn_Adb(pidCmd);
-    if (pidStr.empty()) { diag_log("LoadLibraryAndHook: ADB pid empty"); return; }
-    pidStr.erase(pidStr.find_last_not_of(" \n\r\t") + 1);
-    
-    char mapsCmd[512]; sprintf_s(mapsCmd, "-s %s exec-out su -c \"cat /proc/%s/maps\" 2>/dev/null", portBuf, pidStr.c_str());
-    std::string mapsStr = ShellReturn_Adb(mapsCmd);
-    if (mapsStr.empty()) { diag_log("LoadLibraryAndHook: ADB maps empty"); return; }
-    
-    size_t pos = mapsStr.find("libil2cpp");
-    if (pos == std::string::npos) { diag_log("LoadLibraryAndHook: libil2cpp not in maps"); return; }
-    
-    size_t lineStart = mapsStr.rfind('\n', pos);
-    if (lineStart == std::string::npos) lineStart = 0; else lineStart++;
-    size_t hexEnd = mapsStr.find('-', lineStart);
-    if (hexEnd == std::string::npos) { diag_log("LoadLibraryAndHook: cant parse maps line"); return; }
-    
-    std::string hexStr = mapsStr.substr(lineStart, hexEnd - lineStart);
-    il2cpp = strtoull(hexStr.c_str(), nullptr, 16);
-    char ibuf[128]; sprintf_s(ibuf, "LoadLibraryAndHook: il2cpp = 0x%llX", (unsigned long long)il2cpp); diag_log(ibuf);
+    if (VMM.pVM == nullptr) return;
+    VMM.GuestCR3 = 1;
 }
+
