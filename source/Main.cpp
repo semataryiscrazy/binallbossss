@@ -447,11 +447,12 @@ void runRenderTick() {
             SWP_NOACTIVATE | SWP_NOCOPYBITS);
     }
 
+    eventPoll();
+
     // If D3D hook is installed, do NOT touch ImGui from this thread
-    // (the D3D Present thread manages ImGui frames)
+    // (the D3D Present thread manages all ImGui rendering)
     if (g_d3dHookInstalled) return;
 
-    eventPoll();
     ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
 
     if (!g_d3dReady) {
