@@ -21071,7 +21071,7 @@ inline void setupWindow(HWND foundWindow = NULL) {
     // Cria como POPUP top-level com WS_EX_LAYERED + HWND_TOPMOST (sem SetParent)
     // Click-through é controlado via WM_NCHITTEST no WndProc
     hwnd = CreateWindowExA(
-        WS_EX_TOOLWINDOW,
+        WS_EX_LAYERED | WS_EX_TOOLWINDOW,
         wc.lpszClassName,
         "SatellaOverlay",
         WS_POPUP,
@@ -21343,19 +21343,6 @@ inline LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (wParam != SIZE_MINIMIZED) {
             Twidht = (UINT)LOWORD(lParam);
             Theight = (UINT)HIWORD(lParam);
-            extern IDXGISwapChain* g_pSwapChain;
-            extern ID3D11Device* g_pd3dDevice;
-            extern ID3D11RenderTargetView* g_mainRenderTargetView;
-            if (g_pSwapChain && g_pd3dDevice) {
-                if (g_mainRenderTargetView) { g_mainRenderTargetView->Release(); g_mainRenderTargetView = nullptr; }
-                g_pSwapChain->ResizeBuffers(0, Twidht, Theight, DXGI_FORMAT_UNKNOWN, 0);
-                ID3D11Texture2D* pBackBuffer;
-                g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
-                if (pBackBuffer) {
-                    g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr, &g_mainRenderTargetView);
-                    pBackBuffer->Release();
-                }
-            }
         }
         break;
     case WM_SYSCOMMAND:

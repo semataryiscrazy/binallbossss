@@ -22,12 +22,6 @@ bool g_Unload = false;
 ImFont* FontAwesomeRegular = nullptr;
 ImFont* FontAwesomeSolid14 = nullptr;
 ImFont* FontAwesomeBrands = nullptr;
-
-// D3D11 globals
-ID3D11Device* g_pd3dDevice = nullptr;
-ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
-IDXGISwapChain* g_pSwapChain = nullptr;
-ID3D11RenderTargetView* g_mainRenderTargetView = nullptr;
 void UnloadCheat();
 extern "C" __declspec(dllexport) void TriggerUnload() { UnloadCheat(); }
 
@@ -176,53 +170,6 @@ static void AplicarPatchesAOB() {
 }
 
 // --- ESP -----------------------------------------------------
-
-static void CreateRenderTarget();
-
-static bool CreateDeviceD3D(HWND hWnd) {
-    DXGI_SWAP_CHAIN_DESC sd = {};
-    sd.BufferCount = 2;
-    sd.BufferDesc.Width = 0;
-    sd.BufferDesc.Height = 0;
-    sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    sd.BufferDesc.RefreshRate.Numerator = 60;
-    sd.BufferDesc.RefreshRate.Denominator = 1;
-    sd.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH;
-    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    sd.OutputWindow = hWnd;
-    sd.SampleDesc.Count = 1;
-    sd.SampleDesc.Quality = 0;
-    sd.Windowed = TRUE;
-    sd.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-
-    UINT createDeviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-    D3D_FEATURE_LEVEL featureLevel;
-    D3D_FEATURE_LEVEL featureLevelArray[2] = { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
-    HRESULT res = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, createDeviceFlags, featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
-    if (res == DXGI_ERROR_UNSUPPORTED)
-        res = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, createDeviceFlags, featureLevelArray, 2, D3D11_SDK_VERSION, &sd, &g_pSwapChain, &g_pd3dDevice, &featureLevel, &g_pd3dDeviceContext);
-    if (res != S_OK) return false;
-
-    CreateRenderTarget();
-    return true;
-}
-
-static void CreateRenderTarget() {
-    if (!g_pSwapChain) return;
-    ID3D11Texture2D* pBackBuffer;
-    g_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&pBackBuffer));
-    if (pBackBuffer) {
-        g_pd3dDevice->CreateRenderTargetView(pBackBuffer, nullptr, &g_mainRenderTargetView);
-        pBackBuffer->Release();
-    }
-}
-
-static void CleanupDeviceD3D() {
-    if (g_mainRenderTargetView) { g_mainRenderTargetView->Release(); g_mainRenderTargetView = nullptr; }
-    if (g_pSwapChain) { g_pSwapChain->Release(); g_pSwapChain = nullptr; }
-    if (g_pd3dDeviceContext) { g_pd3dDeviceContext->Release(); g_pd3dDeviceContext = nullptr; }
-    if (g_pd3dDevice) { g_pd3dDevice->Release(); g_pd3dDevice = nullptr; }
-}
 
 static DWORD SafeTick();
 static void LogCrash(const char* context);
@@ -470,7 +417,7 @@ void runRenderTick() {
     SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch,
         SWP_NOACTIVATE | SWP_NOCOPYBITS);
 
-    ImGui_ImplWin32_NewFrame(); ImGui_ImplDX11_NewFrame(); ImGui::NewFrame();
+    ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
 
     // ─── Stream Mode (F6) ───
     if (GetAsyncKeyState(VK_F6) & 1) {
@@ -925,11 +872,11 @@ void runRenderTick() {
     ImGui::End();
 
     ImGui::EndFrame(); ImGui::Render();
-    if (g_pd3dDevice && g_pSwapChain) {
-        g_pd3dDeviceContext->OMSetRenderTargets(1, &g_mainRenderTargetView, nullptr);
-        ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-        g_pSwapChain->Present(1, 0);
-    }
+    SafeRenderGDI();
+}
+
+static void SafeRenderGDI() {
+    __try { ImGui_ImplGDI_RenderDrawData(ImGui::GetDrawData(), hwnd); } __except(EXCEPTION_EXECUTE_HANDLER) {}
 }
 
 
@@ -1330,11 +1277,6 @@ static void InitIdowImpl() {
     LoadKeyBinds();
     setupWindow(JanelaAlvo);
     if (!hwnd) { return; }
-
-    // Initialize D3D11
-    if (!CreateDeviceD3D(hwnd)) { LogCrash("[Init] CreateDeviceD3D failed"); return; }
-    ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
-
     SetWindowDisplayAffinity(hwnd, 0x11);
 
     HRESULT hr = SafeCoInitialize();
@@ -1381,9 +1323,7 @@ static void InitIdowImpl() {
     RenderLoop();
 
     // Shutdown ImGui e overlay
-    ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown(); ImGui::DestroyContext();
-    CleanupDeviceD3D();
     delete[] g_Buffer; g_Buffer = nullptr; g_BufferWidth = g_BufferHeight = 0;
     if (hwnd) {
         SetWindowDisplayAffinity(hwnd, 0);
