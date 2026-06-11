@@ -897,12 +897,14 @@ static void SafeRenderGDI() {
 // ─── D3D11 Present Hook (for BlueStacks in-process overlay) ───
 
 static LRESULT CALLBACK BSWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    // ImGui handler protected: if it crashes, original WndProc still runs
     __try {
         if (Auth.MenuVisible && ImGui::GetCurrentContext())
             ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam);
-        if (hWnd == JanelaAlvo && g_origWndProc)
-            return CallWindowProc(g_origWndProc, hWnd, msg, wParam, lParam);
     } __except(EXCEPTION_EXECUTE_HANDLER) {}
+    // Always call the original WndProc for BlueStacks to process the message
+    if (hWnd == JanelaAlvo && g_origWndProc)
+        return CallWindowProc(g_origWndProc, hWnd, msg, wParam, lParam);
     return DefWindowProc(hWnd, msg, wParam, lParam);
 }
 

@@ -21368,7 +21368,10 @@ inline void LoadKeyBinds() {
 }
 
 inline void handleKeyPresses() {
-    if (GetAsyncKeyState(KeysBind.Menu) & 1) {
+    static DWORD lastMenuToggle = 0;
+    DWORD now = GetTickCount();
+    if ((GetAsyncKeyState(KeysBind.Menu) & 1) && now - lastMenuToggle > 200) {
+        lastMenuToggle = now;
         Auth.MenuVisible = !Auth.MenuVisible;
         Auth.OverlayView = true;
         if (!g_d3dReady) {
