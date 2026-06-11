@@ -403,6 +403,9 @@ static void SafeRenderGDI();
 static bool SafeNewFrame() {
     __try { ImGui_ImplWin32_NewFrame(); ImGui::NewFrame(); return true; } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[M1] NewFrame crash"); return false; }
 }
+static bool SafeRenderESP(int w, int h) {
+    __try { DesenharESP(w, h); return true; } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[M3] ESP crash"); return false; }
+}
 
 void runRenderTick() {
     eventPoll();
@@ -871,7 +874,7 @@ void runRenderTick() {
     ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
     ImGui::Begin("##ESPWindow", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus);
-    DesenharESP(static_cast<int>(ImGui::GetIO().DisplaySize.x), static_cast<int>(ImGui::GetIO().DisplaySize.y));
+    SafeRenderESP(static_cast<int>(ImGui::GetIO().DisplaySize.x), static_cast<int>(ImGui::GetIO().DisplaySize.y));
     ImGui::End();
 
     ImGui::EndFrame(); ImGui::Render();
