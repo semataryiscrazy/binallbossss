@@ -963,13 +963,20 @@ static void RenderLoop() {
     __try {
         using namespace std::chrono;
         auto lastRender = steady_clock::now();
+        static bool once = false;
         while (!g_Unload) {
+            if (!once) { DiagLog("[R1] before handleKeyPresses"); }
             handleKeyPresses();
+            if (!once) { DiagLog("[R2] after handleKeyPresses"); }
             auto now = steady_clock::now();
+            if (!once) { DiagLog("[R3] after clock"); }
             long long frameInterval = PerformanceMode ? 33333333 : 16666666;
             if (duration_cast<nanoseconds>(now - lastRender).count() >= frameInterval) {
                 lastRender = now;
+                if (!once) { DiagLog("[R4] before runRenderTick"); }
                 runRenderTick();
+                if (!once) { DiagLog("[R5] after runRenderTick"); }
+                once = true;
             }
             Sleep(PerformanceMode ? 5 : 1);
         }
