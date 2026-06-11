@@ -974,14 +974,28 @@ __declspec(noinline) static void RenderLoop() {
     while (!g_Unload) {
         iter++;
         if (iter % 60 == 0) {
-            char buf[128];
-            RECT wr = {0}; RECT hr = {0};
+            char buf[256];
+            RECT wr = {0}; RECT hr = {0}; RECT tr = {0};
             BOOL hwOK = IsWindow(hwnd) && GetWindowRect(hwnd, &hr);
-            BOOL twOK = IsWindow(hTargetWindow) && GetWindowRect(hTargetWindow, &wr);
-            sprintf_s(buf, "[RL] iter=%u hwnd=%p(%dx%d) target=%p(%dx%d)", iter, hwnd, 
+            BOOL twOK = IsWindow(hTargetWindow) && GetWindowRect(hTargetWindow, &tr);
+            BOOL fg = hwOK && (GetForegroundWindow() == hwnd);
+            if (hwOK) { 
+                wr.left = hr.left; wr.top = hr.top;
+                wr.right = hr.right; wr.bottom = hr.bottom;
+            }
+            sprintf_s(buf, "[RL] iter=%u hwnd=(%d,%d %dx%d) fg=%d target=(%d,%d %dx%d)", 
+                iter,
+                hwOK ? wr.left : 0, hwOK ? wr.top : 0,
                 hwOK ? (hr.right-hr.left) : 0, hwOK ? (hr.bottom-hr.top) : 0,
-                hTargetWindow, twOK ? (wr.right-wr.left) : 0, twOK ? (wr.bottom-wr.top) : 0);
+                fg,
+                twOK ? tr.left : 0, twOK ? tr.top : 0,
+                twOK ? (tr.right-tr.left) : 0, twOK ? (tr.bottom-tr.top) : 0);
             LogCrash(buf);
+            // Every 180 iterations, try to force overlay to front
+            if (iter % 180 == 0 && hwOK) {
+                SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+                BringWindowToTop(hwnd);
+            }
         }
         __try { handleKeyPresses(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[RL] handleKeyPresses crash"); }
         __try { runRenderTick(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[RL] runRenderTick crash"); }
