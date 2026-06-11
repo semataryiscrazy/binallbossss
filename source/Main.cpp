@@ -376,22 +376,16 @@ extern HWND hTargetWindow;
 extern HWND hwnd;
 static void StopKellerETW();
 static void ClearPEBDebugFlags();
+static void DiagLog(const char* msg);
 
 void runRenderTick() {
+    DiagLog("[R] eventPoll");
     eventPoll();
+    DiagLog("[R] GetIO");
     ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
 
-    // --- MEMORY CHECK VERIFICATION ---
-    // Periodic check for tampering/hooking
-    static int integrityCheckCounter = 0;
-    integrityCheckCounter++;
-    if (integrityCheckCounter % 30 == 0) {  // Check every 30 frames
-        MemoryIntegrity::VerifyIntegrity();
-        AdvancedEvasion::MaintainAdvancedEvasion();  // Maintain behavioral evasion
-        integrityCheckCounter = 0;
-    }
-
     // Re-find target window if handle is stale
+    DiagLog("[R] window check");
     RECT wr = {0};
     if (!IsWindow(hTargetWindow) || !GetWindowRect(hTargetWindow, &wr)) {
         hTargetWindow = FindRenderWindow(NULL);
