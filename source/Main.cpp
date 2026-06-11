@@ -1185,6 +1185,7 @@ static HRESULT SafeCoInitialize() {
 #pragma optimize("", on)
 
 static void InitIdowImpl() {
+    { wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp); wcscat_s(tmp, L"satella_crash.txt"); HANDLE f = CreateFileW(tmp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL); if (f != INVALID_HANDLE_VALUE) CloseHandle(f); }
     DiagLog("[D] Step1: InitConsole");
     InitializeConsole();
     DiagLog("[D] Step2: LookupWindow");
