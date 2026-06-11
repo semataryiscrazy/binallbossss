@@ -563,6 +563,11 @@ void runRenderTick() {
 
                     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, loggingIn ? 0.5f : 1.0f);
                     ImGui::BeginDisabled(loggingIn);
+                    if (loggingIn) {
+                        ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 4));
+                        ImGui::TextColored(ImColor(219, 0, 166, 255), "Conectando ao servidor...");
+                        ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 4));
+                    }
                     ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(219, 0, 166, 220));
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(240, 30, 190, 240));
                     ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(255, 60, 210, 255));
