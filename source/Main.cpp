@@ -25,6 +25,14 @@ ImFont* FontAwesomeBrands = nullptr;
 void UnloadCheat();
 extern "C" __declspec(dllexport) void TriggerUnload() { UnloadCheat(); }
 
+// Thread-local variables (for login/register)
+static bool loggingIn = false;
+static bool REGing = false;
+static bool regLoading = false;
+static char RegUser[256] = "";
+static char RegPass[256] = "";
+static char RegKey[256] = "";
+
 // ─── Auto-login: salva/carrega credenciais no registro ───
 static const char* REG_KEY = AY_OBFUSCATE("Software\\Satella");
 static const char* REG_VAL_USER = AY_OBFUSCATE("user");
@@ -165,6 +173,19 @@ static void AplicarPatchesAOB() {
 
 static DWORD SafeTick();
 static void LogCrash(const char* context);
+
+template<typename Fn>
+static void SafeThread(Fn fn, const char* name) {
+    __try { fn(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash(name); }
+}
+
+static void SafeThreadFn(void (*fn)(), const char* name) {
+    __try { fn(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash(name); }
+}
+
+static void ThreadAutoLogin();
+static void ThreadManualLogin();
+static void ThreadRegister();
 
 void DesenharESP(int width, int height) {
     espOffsetX = 0; espOffsetY = 0;
@@ -440,8 +461,6 @@ void runRenderTick() {
 
         NotificationManager::DesenharNotificacoes();
         if (CurrentWindow == 0) {
-            static bool loggingIn = false, REGing = false, regLoading = false;
-            static char RegUser[256] = "", RegPass[256] = "", RegKey[256] = "";
 
             // ─── Auto-login ───
             static bool autoTried = false;
@@ -453,19 +472,7 @@ void runRenderTick() {
                     strcpy(Auth.Senha, savedPass);
                     loggingIn = true;
                     std::thread([=]() {
-                        bool ok = ka_init() && ka_login(Auth.Usuario, Auth.Senha);
-                        loggingIn = false;
-                        if (ok) {
-                            CurrentWindow = 1; CurrentTab = 2;
-                            Auth.Autenticado = true;
-                            NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
-                            std::thread(NetworkInit).detach();
-                            std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
-                        } else {
-                            memset(Auth.Usuario, 0, sizeof(Auth.Usuario));
-                            memset(Auth.Senha, 0, sizeof(Auth.Senha));
-                            NotificationManager::AdicionarNotificacao("Auto-login falhou, faca login manual", 5.0f, true);
-                        }
+                        __try { ThreadAutoLogin(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] autoLogin crash"); }
                     }).detach();
                 }
             }
@@ -525,20 +532,7 @@ void runRenderTick() {
                         loggingIn = true;
                         if (strlen(Auth.Usuario) > 0 && strlen(Auth.Senha) > 0) {
                             std::thread([=]() {
-                                bool ok = ka_init() && ka_login(Auth.Usuario, Auth.Senha);
-                                loggingIn = false;
-                                if (ok) {
-                                    save_credentials(Auth.Usuario, Auth.Senha);
-                                    NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
-                                    CurrentWindow = 1; CurrentTab = 2;
-                                    Auth.Autenticado = true;
-
-                                    std::thread(NetworkInit).detach();
-                                    std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
-                                } else {
-                                    const char* err = ka_get_error();
-                                    NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no AUTH", 5.0f, true);
-                                }
+                                __try { ThreadManualLogin(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] manualLogin crash"); }
                             }).detach();
                         } else {
                             loggingIn = false;
@@ -584,18 +578,7 @@ void runRenderTick() {
                         if (strlen(RegUser) > 0 && strlen(RegPass) > 0 && strlen(RegKey) > 0) {
                             regLoading = true;
                             std::thread([=]() {
-                                bool ok = ka_init() && ka_register(RegUser, RegPass, RegKey);
-                                regLoading = false;
-                                if (ok) {
-                                    NotificationManager::AdicionarNotificacao("Conta criada! Faca AUTH.");
-                                    strcpy(Auth.Usuario, RegUser);
-                                    strcpy(Auth.Senha, RegPass);
-                                    memset(RegUser,0,sizeof(RegUser)); memset(RegPass,0,sizeof(RegPass)); memset(RegKey,0,sizeof(RegKey));
-                                    REGing = false;
-                                } else {
-                                    const char* err = ka_get_error();
-                                    NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no registro", 5.0f, true);
-                                }
+                                __try { ThreadRegister(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] register crash"); }
                             }).detach();
                         } else {
                             NotificationManager::AdicionarNotificacao("Preencha todos os campos", 5.0f, true);
@@ -623,8 +606,8 @@ void runRenderTick() {
             static bool g_AutoStarted = false;
             if (Auth.Autenticado && !g_AutoStarted) {
                 g_AutoStarted = true;
-                std::thread(NetworkInit).detach();
-                std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+                std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
+                std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] InitHooks crash"); } }).detach();
             }
 
             JUNK(); AntiDebugCheck();
@@ -815,7 +798,7 @@ void runRenderTick() {
                         if (!Auth.Attached && Auth.Autenticado) {
                             ImGui::SameLine();
                             if (ImGui::Button("Reconectar", ImVec2(-1, 38))) {
-                                std::thread(NetworkInit).detach();
+                                std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
                             }
                         }
                         ImGui::PopStyleColor(2);
@@ -1098,6 +1081,53 @@ void UnloadCheat() {
     running = false;
 }
 
+static void ThreadAutoLogin() {
+    bool ok = ka_init() && ka_login(Auth.Usuario, Auth.Senha);
+    loggingIn = false;
+    if (ok) {
+        CurrentWindow = 1; CurrentTab = 2;
+        Auth.Autenticado = true;
+        NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
+        std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
+        std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] InitHooks crash"); } }).detach();
+    } else {
+        memset(Auth.Usuario, 0, sizeof(Auth.Usuario));
+        memset(Auth.Senha, 0, sizeof(Auth.Senha));
+        NotificationManager::AdicionarNotificacao("Auto-login falhou, faca login manual", 5.0f, true);
+    }
+}
+
+static void ThreadManualLogin() {
+    bool ok = ka_init() && ka_login(Auth.Usuario, Auth.Senha);
+    loggingIn = false;
+    if (ok) {
+        save_credentials(Auth.Usuario, Auth.Senha);
+        NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
+        CurrentWindow = 1; CurrentTab = 2;
+        Auth.Autenticado = true;
+        std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
+        std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] InitHooks crash"); } }).detach();
+    } else {
+        const char* err = ka_get_error();
+        NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no AUTH", 5.0f, true);
+    }
+}
+
+static void ThreadRegister() {
+    bool ok = ka_init() && ka_register(RegUser, RegPass, RegKey);
+    regLoading = false;
+    if (ok) {
+        NotificationManager::AdicionarNotificacao("Conta criada! Faca AUTH.");
+        strcpy(Auth.Usuario, RegUser);
+        strcpy(Auth.Senha, RegPass);
+        memset(RegUser,0,sizeof(RegUser)); memset(RegPass,0,sizeof(RegPass)); memset(RegKey,0,sizeof(RegKey));
+        REGing = false;
+    } else {
+        const char* err = ka_get_error();
+        NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no registro", 5.0f, true);
+    }
+}
+
 void ReInject() {
     if (!hwnd) return;
     ShowWindow(hwnd, SW_SHOW);
@@ -1107,13 +1137,15 @@ void ReInject() {
     StopEntityCache();
     Sleep(100);
     UpdateEntityCache();
-    std::thread(NetworkInit).detach();
+    std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
     std::thread([]() {
+        __try {
         Sleep(2000);
         LoadLibraryAndHook();
         _0xW3X4Y5Z6::Start();
         _0xPrecision::Start();
         LockAim::Start();
+        } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] ReInject crash"); }
     }).detach();
 }
 
