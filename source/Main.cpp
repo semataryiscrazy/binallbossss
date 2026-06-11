@@ -414,6 +414,7 @@ typedef HRESULT(WINAPI* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent = nullptr;
 static bool g_d3dReady = false;
 static WNDPROC g_origWndProc = nullptr;
+static IDXGISwapChain* g_hookedSC = nullptr;
 
 void runRenderTick() {
     eventPoll();
@@ -929,6 +930,14 @@ static LRESULT CALLBACK BSWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
 }
 
 static void D3DRenderFrame() {
+    // Set DisplaySize from hooked swap chain (ImGui_ImplDX11_NewFrame doesn't do this)
+    if (g_hookedSC) {
+        DXGI_SWAP_CHAIN_DESC scd;
+        if (SUCCEEDED(g_hookedSC->GetDesc(&scd))) {
+            ImGuiIO& io = ImGui::GetIO();
+            io.DisplaySize = ImVec2((float)scd.BufferDesc.Width, (float)scd.BufferDesc.Height);
+        }
+    }
     ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
 
     // ─── Particles ───
@@ -1251,6 +1260,8 @@ static void D3DPresentHook_Init(IDXGISwapChain* sc) {
     if (d && c) {
         LogCrash("[D3D] Init DX11 OK");
         ImGui_ImplDX11_Init(d, c);
+        g_hookedSC = sc;
+        if (g_hookedSC) g_hookedSC->AddRef();
         g_d3dReady = true;
     } else {
         LogCrash("[D3D] Init DX11 FAILED");
@@ -1777,6 +1788,7 @@ cleanup_d3d:
         MH_DisableHook(g_origPresent); MH_RemoveHook(g_origPresent);
     }
     delete[] g_Buffer; g_Buffer = nullptr; g_BufferWidth = g_BufferHeight = 0;
+    if (g_hookedSC) { g_hookedSC->Release(); g_hookedSC = nullptr; }
     if (hwnd) {
         ::DestroyWindow(hwnd);
     }
