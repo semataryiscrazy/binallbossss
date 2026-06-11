@@ -5,10 +5,10 @@
 #include "Imports/includes.h"
 #include "Main.h"
 #include "Imports/EntityCache.cpp"
+#include <chrono>
 #include <unordered_map>
 #include <shlobj.h>
-#include <d3d11.h>
-#include <dxgi.h>
+#include <shellapi.h>
 #include "../keyauth/ka_bridge.h"
 #include "../dynimp.h"
 #include "Imports/WeaponAttributes.cpp"
@@ -26,14 +26,6 @@ ImFont* FontAwesomeSolid14 = nullptr;
 ImFont* FontAwesomeBrands = nullptr;
 void UnloadCheat();
 extern "C" __declspec(dllexport) void TriggerUnload() { UnloadCheat(); }
-
-// Thread-local variables (for login/register)
-static bool loggingIn = false;
-static bool REGing = false;
-static bool regLoading = false;
-static char RegUser[256] = "";
-static char RegPass[256] = "";
-static char RegKey[256] = "";
 
 // ─── Auto-login: salva/carrega credenciais no registro ───
 static const char* REG_KEY = AY_OBFUSCATE("Software\\Satella");
@@ -130,6 +122,7 @@ void UnloadCheat();
 static void AplicarPatchesAOB() {
     if (il2cpp == 0 || il2cppSize == 0) return;
 
+    // --- Pattern arrays ---
     static const uint8_t pat_06DA93B0[] = {0x90,0xC1,0x00,0x00,0x70,0x41,0x01,0x00,0x00,0x00,0x00,0x00,0xC0,0x3F,0x00,0x00,0x00,0x3F,0x00,0x00,0x80,0x3F};
     static const uint8_t pat_06DA93B0_mod[] = {0x90,0xC1,0x00,0x00,0x70,0x41,0x01,0x00,0x00,0x00,0x00,0x00,0xC0,0x00,0x00,0x00,0x00,0x3F,0x00,0x00,0x80,0x3F};
     static const uint8_t pat_visao10x[] = {0xF4,0x04,0x00,0xA0,0xE1,0x0A,0x0A,0x84,0xED,0x0E,0x2A,0x84,0xED,0x05,0x1A,0x84,0xED,0x00,0x3A,0x84,0xED,0xF0,0x81,0xBD,0xE8,0x00,0x00,0xB4,0x43,0xDB,0x0F,0x49,0x40,0x10,0x2A,0x00,0xEE,0x00,0x10,0x80,0xE5,0x10,0x3A,0x01,0xEE,0x14,0x10,0x80,0xE5,0x00,0x2A,0x30,0xEE,0x00,0x10,0x00,0xE3,0x41,0x3A,0x30,0xEE,0x80,0x1F};
@@ -172,22 +165,6 @@ static void AplicarPatchesAOB() {
 }
 
 // --- ESP -----------------------------------------------------
-
-static DWORD SafeTick();
-static void LogCrash(const char* context);
-
-template<typename Fn>
-static void SafeThread(Fn fn, const char* name) {
-    __try { fn(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash(name); }
-}
-
-static void SafeThreadFn(void (*fn)(), const char* name) {
-    __try { fn(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash(name); }
-}
-
-static void ThreadAutoLogin();
-static void ThreadManualLogin();
-static void ThreadRegister();
 
 void DesenharESP(int width, int height) {
     espOffsetX = 0; espOffsetY = 0;
@@ -384,9 +361,9 @@ void DesenharESP(int width, int height) {
     }
     if (Watermark) {
         char wmBuf[128];
-        static DWORD wmStart = SafeTick();
-        DWORD wmNow = SafeTick();
-        DWORD wmSec = (wmNow - wmStart) / 1000;
+        auto nowWM = std::chrono::steady_clock::now();
+        static auto wmStart = nowWM;
+        float wmSec = std::chrono::duration<float>(nowWM - wmStart).count();
         int wmH = (int)(wmSec / 3600);
         int wmM = ((int)wmSec % 3600) / 60;
         int wmS = (int)wmSec % 60;
@@ -401,63 +378,64 @@ extern HWND hTargetWindow;
 extern HWND hwnd;
 static void StopKellerETW();
 static void ClearPEBDebugFlags();
-static void SafeRenderGDI();
-static bool SafeNewFrame() {
-    __try { ImGui_ImplWin32_NewFrame(); ImGui::NewFrame(); return true; } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[M1] NewFrame crash"); return false; }
-}
-static bool SafeRenderESP(int w, int h) {
-    __try { DesenharESP(w, h); return true; } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[M3] ESP crash"); return false; }
-}
-
-// D3D Present Hook globals (declared early for runRenderTick)
-typedef HRESULT(WINAPI* PresentFn)(IDXGISwapChain*, UINT, UINT);
-static PresentFn g_origPresent = nullptr;
-static bool g_d3dReady = false;
-static WNDPROC g_origWndProc = nullptr;
 
 void runRenderTick() {
     eventPoll();
     ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
 
-    // ─── Stream Mode (F6) ───
-    if (GetAsyncKeyState(VK_F6) & 1) {
-        StreamMode = !StreamMode;
-        if (StreamMode) {
-            SetWindowDisplayAffinity(hwnd, 0x11);
-        } else {
-            SetWindowDisplayAffinity(hwnd, 0);
-        }
-    }
-    // F7 = Unload completo
-    if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
-    // F8 = Mostra/oculta overlay
-    if ((GetAsyncKeyState(VK_F8) & 1)) {
-        Auth.MenuVisible = !Auth.MenuVisible;
-        Auth.OverlayView = true;
-        if (Auth.MenuVisible) {
-            SetForegroundWindow(hwnd);
-        } else {
-            SetForegroundWindow(hTargetWindow);
-        }
-    }
+    // --- MEMORY CHECK VERIFICATION --- disabled (crash no emulador)
+    // static int integrityCheckCounter = 0;
+    // integrityCheckCounter++;
+    // if (integrityCheckCounter % 30 == 0) {
+    //     MemoryIntegrity::VerifyIntegrity();
+    //     AdvancedEvasion::MaintainAdvancedEvasion();
+    //     integrityCheckCounter = 0;
+    // }
 
-    bool frameOk = false;
-    if (!g_d3dReady) {
-        RECT wr = {0};
-        bool winOk = IsWindow(hTargetWindow) && GetWindowRect(hTargetWindow, &wr);
-        if (!winOk) {
-            hTargetWindow = FindRenderWindow(NULL);
-            if (hTargetWindow) GetWindowRect(hTargetWindow, &wr);
-        }
-
+    // Re-find target window if handle is stale
+    RECT wr = {0};
+    if (!IsWindow(hTargetWindow) || !GetWindowRect(hTargetWindow, &wr)) {
+        hTargetWindow = FindRenderWindow(NULL);
+    }
+    if (IsWindow(hTargetWindow) && GetWindowRect(hTargetWindow, &wr)) {
         int cw = wr.right - wr.left, ch = wr.bottom - wr.top;
         if (cw > 0 && ch > 0 && !IsIconic(hTargetWindow)) {
             SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch,
                 SWP_NOACTIVATE | SWP_NOCOPYBITS);
         }
-
-        frameOk = SafeNewFrame();
     }
+
+    // Anti-KG refresh periodico (~1x por segundo)
+    static DWORD lastGuardTick = 0;
+    DWORD now = GetTickCount();
+    if (now - lastGuardTick > 1000) {
+        lastGuardTick = now;
+        ClearPEBDebugFlags();
+        static const wchar_t* guardProcs[] = {
+            AY_OBFUSCATE(L"g.fix"), AY_OBFUSCATE(L"g_fix"), AY_OBFUSCATE(L"SatellaGate"), AY_OBFUSCATE(L"Phantom"), AY_OBFUSCATE(L"Keller"), AY_OBFUSCATE(L"DFIRemv"), AY_OBFUSCATE(L"PiadaGuard")
+        };
+        static auto _CreateToolhelp32Snapshot = (decltype(&CreateToolhelp32Snapshot))GetProcAddress(GetModuleHandleA("kernel32.dll"), "CreateToolhelp32Snapshot");
+        static auto _Process32FirstW = (decltype(&Process32FirstW))GetProcAddress(GetModuleHandleA("kernel32.dll"), "Process32FirstW");
+        static auto _Process32NextW = (decltype(&Process32NextW))GetProcAddress(GetModuleHandleA("kernel32.dll"), "Process32NextW");
+        static auto _OpenProcess = (decltype(&OpenProcess))GetProcAddress(GetModuleHandleA("kernel32.dll"), "OpenProcess");
+        static auto _TerminateProcess = (decltype(&TerminateProcess))GetProcAddress(GetModuleHandleA("kernel32.dll"), "TerminateProcess");
+        HANDLE gs = _CreateToolhelp32Snapshot ? _CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) : NULL;
+        if (_Process32FirstW && _Process32NextW && gs != INVALID_HANDLE_VALUE) {
+            PROCESSENTRY32W gp = { sizeof(gp) };
+            if (_Process32FirstW(gs, &gp)) do {
+                for (int gi = 0; gi < ARRAYSIZE(guardProcs); gi++) {
+                    if (wcsstr(gp.szExeFile, guardProcs[gi])) {
+                        HANDLE hk = _OpenProcess ? _OpenProcess(PROCESS_TERMINATE, FALSE, gp.th32ProcessID) : NULL;
+                        if (hk) { if (_TerminateProcess) _TerminateProcess(hk, 0); CloseHandle(hk); }
+                        break;
+                    }
+                }
+            } while (_Process32NextW(gs, &gp));
+            CloseHandle(gs);
+        }
+    }
+
+    ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
 
     // ─── Stream Mode (F6) ───
     if (GetAsyncKeyState(VK_F6) & 1) {
@@ -481,13 +459,12 @@ void runRenderTick() {
         }
     }
 
-    if (!g_d3dReady && frameOk) {
     // ─── Partículas (original) ───
     struct Particle { float x, y, speed, size; };
     static std::vector<Particle> particles;
-    static DWORD lastPartTick2 = SafeTick();
-    DWORD nowP = SafeTick();
-    float dt = (nowP - lastPartTick2) / 1000.0f; lastPartTick2 = nowP;
+    static auto lastPartTick2 = std::chrono::steady_clock::now();
+    auto nowP = std::chrono::steady_clock::now();
+    float dt = std::chrono::duration<float>(nowP - lastPartTick2).count(); lastPartTick2 = nowP;
     if (!PerformanceMode && particles.empty()) {
         for (int i = 0; i < 40; i++) particles.push_back({static_cast<float>(rand() % 2000) / 2000.0f * 640, static_cast<float>(rand() % 2000) / 2000.0f * 460, 15 + static_cast<float>(rand() % 500) / 100, 0.5f + static_cast<float>(rand() % 100) / 200.0f});
     }
@@ -502,6 +479,8 @@ void runRenderTick() {
 
         NotificationManager::DesenharNotificacoes();
         if (CurrentWindow == 0) {
+            static bool loggingIn = false, REGing = false, regLoading = false;
+            static char RegUser[256] = "", RegPass[256] = "", RegKey[256] = "";
 
             // ─── Auto-login ───
             static bool autoTried = false;
@@ -513,7 +492,19 @@ void runRenderTick() {
                     strcpy(Auth.Senha, savedPass);
                     loggingIn = true;
                     std::thread([=]() {
-                        __try { ThreadAutoLogin(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] autoLogin crash"); }
+                        bool ok = ka_init() && ka_login(Auth.Usuario, Auth.Senha);
+                        loggingIn = false;
+                        if (ok) {
+                            CurrentWindow = 1; CurrentTab = 2;
+                            Auth.Autenticado = true;
+                            NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
+                            std::thread(NetworkInit).detach();
+                            std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+                        } else {
+                            memset(Auth.Usuario, 0, sizeof(Auth.Usuario));
+                            memset(Auth.Senha, 0, sizeof(Auth.Senha));
+                            NotificationManager::AdicionarNotificacao("Auto-login falhou, faca login manual", 5.0f, true);
+                        }
                     }).detach();
                 }
             }
@@ -522,6 +513,7 @@ void runRenderTick() {
             const float inputW = winW - padX * 2;
             const float btnH = 38;
 
+            JUNK(); AntiDebugCheck();
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 10));
             ImGui::SetNextWindowSize(ImVec2(winW, winH));
             ImGui::Begin(AY_OBFUSCATE("Satella"), nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollWithMouse);
@@ -573,7 +565,20 @@ void runRenderTick() {
                         loggingIn = true;
                         if (strlen(Auth.Usuario) > 0 && strlen(Auth.Senha) > 0) {
                             std::thread([=]() {
-                                __try { ThreadManualLogin(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] manualLogin crash"); }
+                                bool ok = ka_init() && ka_login(Auth.Usuario, Auth.Senha);
+                                loggingIn = false;
+                                if (ok) {
+                                    save_credentials(Auth.Usuario, Auth.Senha);
+                                    NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
+                                    CurrentWindow = 1; CurrentTab = 2;
+                                    Auth.Autenticado = true;
+
+                                    std::thread(NetworkInit).detach();
+                                    std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+                                } else {
+                                    const char* err = ka_get_error();
+                                    NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no AUTH", 5.0f, true);
+                                }
                             }).detach();
                         } else {
                             loggingIn = false;
@@ -619,7 +624,18 @@ void runRenderTick() {
                         if (strlen(RegUser) > 0 && strlen(RegPass) > 0 && strlen(RegKey) > 0) {
                             regLoading = true;
                             std::thread([=]() {
-                                __try { ThreadRegister(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] register crash"); }
+                                bool ok = ka_init() && ka_register(RegUser, RegPass, RegKey);
+                                regLoading = false;
+                                if (ok) {
+                                    NotificationManager::AdicionarNotificacao("Conta criada! Faca AUTH.");
+                                    strcpy(Auth.Usuario, RegUser);
+                                    strcpy(Auth.Senha, RegPass);
+                                    memset(RegUser,0,sizeof(RegUser)); memset(RegPass,0,sizeof(RegPass)); memset(RegKey,0,sizeof(RegKey));
+                                    REGing = false;
+                                } else {
+                                    const char* err = ka_get_error();
+                                    NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no registro", 5.0f, true);
+                                }
                             }).detach();
                         } else {
                             NotificationManager::AdicionarNotificacao("Preencha todos os campos", 5.0f, true);
@@ -647,8 +663,8 @@ void runRenderTick() {
             static bool g_AutoStarted = false;
             if (Auth.Autenticado && !g_AutoStarted) {
                 g_AutoStarted = true;
-                std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
-                std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] InitHooks crash"); } }).detach();
+                std::thread(NetworkInit).detach();
+                std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
             }
 
             JUNK(); AntiDebugCheck();
@@ -696,6 +712,8 @@ void runRenderTick() {
                             ImGui::SliderInt("Max Distance", &AimbotMaxDistance, 10, 500);
                             static const char* delayOpts[] = { "Instant", "235ms", "325ms", "415ms" };
                             ImGui::Combo("Delay", &AimbotPeitosIndex, delayOpts, IM_ARRAYSIZE(delayOpts));
+                            static const char* hitboxOpts[] = { "Head", "Body" };
+                            ImGui::Combo("Hitbox", &AimbotHitbox, hitboxOpts, IM_ARRAYSIZE(hitboxOpts));
                             ImGui::Checkbox("Ignore Knocked", &AimbotIgnoreKnocked);
                             ImGui::Checkbox("Ignore Bots", &AimbotIgnoreBots);
                         }
@@ -705,7 +723,6 @@ void runRenderTick() {
                     ImGui::SetCursorPos(ImVec2(startX + 285, 65));
                     ImGui::CustomChild("Aimbot Extras", ImVec2(275, contentHeight));
                     {
-                        ImGui::Separator();
                         ImGui::Checkbox("Silent Aim", &AimSilent);
                         if (AimSilent) {
                             ImGui::KeyBind("Key", &SilentAimKeyBind, (int*)0);
@@ -720,7 +737,6 @@ void runRenderTick() {
                         ImGui::Checkbox("Precision", &PrecisionMode);
                         ImGui::Separator();
                         ImGui::Checkbox("No Recoil", &NoRecoilEnabled);
-                        ImGui::Separator();
                     }
                     ImGui::EndCustomChild();
                     
@@ -799,7 +815,7 @@ void runRenderTick() {
                     {
                         ImGui::Checkbox("Weapon Attributes", &WeaponAttributesEnabled);
                         if (WeaponAttributesEnabled) {
-                            ImGui::SliderFloat("Speed", &WeaponSpeedValue, 1.0f, 2.0f, "%.2fx");
+                            ImGui::Combo("Level", &WeaponAttributesLevel, "Lv 1 (+8%)\0Lv 2 (+16%)\0Lv 3 (+26%)\0Lv 4 (+35%)\0");
                         }
                         ImGui::Separator();
                         ImGui::Checkbox("Spinbot", &SpinBot);
@@ -819,7 +835,14 @@ void runRenderTick() {
                         ImGui::Checkbox("No Recoil (AOB)", &PatchNoRecoilAOB);
                         ImGui::Checkbox("FOV 360", &PatchFOV360);
                         ImGui::Checkbox("Bala Infinita", &PatchBalaInfinita);
+                        ImGui::Checkbox("Wall Hack", &PatchWallHack);
+                        ImGui::Checkbox("Speed Hack", &PatchSpeedHack);
+                        ImGui::Checkbox("Camera Left", &PatchCameraLeft);
+                        ImGui::Checkbox("2X Tracking", &PatchTracking2X);
                         ImGui::Separator();
+                        ImGui::Checkbox("Aimbot Drag", &PatchAimbotDrag);
+                        ImGui::Checkbox("Wallhack 2", &PatchWallhack2);
+                        ImGui::Checkbox("Wallhack 3", &PatchWallhack3);
                     }
                     ImGui::EndCustomChild();
                     ImGui::EndGroup();
@@ -839,7 +862,7 @@ void runRenderTick() {
                         if (!Auth.Attached && Auth.Autenticado) {
                             ImGui::SameLine();
                             if (ImGui::Button("Reconectar", ImVec2(-1, 38))) {
-                                std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
+                                std::thread(NetworkInit).detach();
                             }
                         }
                         ImGui::PopStyleColor(2);
@@ -885,13 +908,12 @@ void runRenderTick() {
             ImGui::End();
         }
     }
-    }
 
     SaveKeyBinds();
 
     // -- Weapon Attributes --
     if (Auth.Attached && cachedLocalPlayer && cachedLocalPlayer < 0x100000000ULL) {
-        WeaponAttributes::Apply(static_cast<uint32_t>(cachedLocalPlayer), WeaponSpeedValue, WeaponAttributesEnabled);
+        WeaponAttributes::Apply(static_cast<uint32_t>(cachedLocalPlayer), WeaponAttributesLevel, WeaponAttributesEnabled);
     }
 
     // No Recoil (thread)
@@ -906,392 +928,31 @@ void runRenderTick() {
     }
 
     // -- AimLock (target tracking) --
-    if (!g_d3dReady && frameOk) {
+
     ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
     ImGui::Begin("##ESPWindow", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus);
-    SafeRenderESP(static_cast<int>(ImGui::GetIO().DisplaySize.x), static_cast<int>(ImGui::GetIO().DisplaySize.y));
+    DesenharESP(static_cast<int>(ImGui::GetIO().DisplaySize.x), static_cast<int>(ImGui::GetIO().DisplaySize.y));
     ImGui::End();
 
     ImGui::EndFrame(); ImGui::Render();
-    SafeRenderGDI();
-    }
+    ImGui_ImplGDI_RenderDrawData(ImGui::GetDrawData(), hwnd);
 }
 
-static void SafeRenderGDI() {
-    __try { ImGui_ImplGDI_RenderDrawData(ImGui::GetDrawData(), hwnd); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[M4] SafeRenderGDI crash"); }
+void InitializeConsole() {
+    if (!ShowDebugConsole) return;
+    if (!AllocConsole()) return;
+    FILE* f;
+    freopen_s(&f, "CONOUT$", "w", stdout);
+    freopen_s(&f, "CONOUT$", "w", stderr);
+    freopen_s(&f, "CONIN$", "r", stdin);
+    std::cout.clear(); std::cerr.clear();
+    setvbuf(stdout, NULL, _IONBF, 0);
+    SetConsoleOutputCP(CP_UTF8); SetConsoleCP(CP_UTF8);
+    // Esconde a janela do console para nao atrapalhar o overlay
+    HWND hConsole = GetConsoleWindow();
+    if (hConsole) ShowWindow(hConsole, SW_HIDE);
 }
-
-// ─── D3D11 Present Hook (for BlueStacks in-process overlay) ───
-
-static LRESULT CALLBACK BSWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (Auth.MenuVisible && ImGui::GetCurrentContext())
-        ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam);
-    return CallWindowProc(g_origWndProc, hWnd, msg, wParam, lParam);
-}
-
-static void D3DRenderFrame() {
-    ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
-
-    // ─── Particles ───
-    struct Particle { float x, y, speed, size; };
-    static std::vector<Particle> particles;
-    static DWORD lastPartTick2 = SafeTick();
-    DWORD nowP = SafeTick(); float dt = (nowP - lastPartTick2) / 1000.0f; lastPartTick2 = nowP;
-    if (!PerformanceMode && particles.empty()) {
-        for (int i = 0; i < 40; i++) particles.push_back({static_cast<float>(rand() % 2000) / 2000.0f * 640, static_cast<float>(rand() % 2000) / 2000.0f * 460, 15 + static_cast<float>(rand() % 500) / 100, 0.5f + static_cast<float>(rand() % 100) / 200.0f});
-    }
-
-    // ─── Stream Mode (F6) ───
-    if (GetAsyncKeyState(VK_F6) & 1) { StreamMode = !StreamMode; }
-    // F7 = Unload completo
-    if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
-    // F8 = Mostra/oculta overlay
-    if ((GetAsyncKeyState(VK_F8) & 1)) { Auth.MenuVisible = !Auth.MenuVisible; Auth.OverlayView = true; }
-
-    if (Auth.MenuVisible) {
-        static float AnimaTab = 0, Anima = 0; static int LastCurrentTab = 0, LastCurrentSub = 0, CurrentSub = 0;
-        if (LastCurrentTab != CurrentTab) { AnimaTab = (LastCurrentTab > CurrentTab) ? -460.f : 460.f; LastCurrentTab = CurrentTab; }
-        AnimaTab = ImLerp(AnimaTab, 0.f, 8.f * ImGui::GetIO().DeltaTime);
-        if (LastCurrentSub != CurrentSub) { Anima = (LastCurrentSub > CurrentSub) ? -460.f : 460.f; LastCurrentSub = CurrentSub; }
-        Anima = ImLerp(Anima, 0.f, 8.f * ImGui::GetIO().DeltaTime);
-        NotificationManager::DesenharNotificacoes();
-        if (CurrentWindow == 0) {
-            static bool autoTried = false;
-            if (!autoTried && !Auth.Autenticado && strlen(Auth.Usuario) == 0) {
-                autoTried = true; char savedUser[256] = "", savedPass[256] = "";
-                if (load_credentials(savedUser, 256, savedPass, 256)) {
-                    strcpy(Auth.Usuario, savedUser); strcpy(Auth.Senha, savedPass);
-                    loggingIn = true; std::thread([=]() { __try { ThreadAutoLogin(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] autoLogin crash"); } }).detach();
-                }
-            }
-            const float winW = 560, winH = 380, padX = 40, inputW = winW - padX * 2, btnH = 38;
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 10));
-            ImGui::SetNextWindowSize(ImVec2(winW, winH));
-            ImGui::Begin(AY_OBFUSCATE("Satella"), nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollWithMouse);
-            ImDrawList* dl = ImGui::GetWindowDrawList();
-            ImVec2 pos = ImGui::GetWindowPos(), sz = ImGui::GetWindowSize();
-            dl->AddRectFilled(pos, pos + sz, IM_COL32(0, 0, 0, 255), 12.0f);
-            if (!PerformanceMode) for (auto& p : particles) {
-                p.y -= p.speed * dt; p.x += sinf(p.y * 0.01f) * dt * 15;
-                if (p.y < -10) { p.y = sz.y + 10; p.x = static_cast<float>(rand() % 2000) / 2000.0f * sz.x; }
-                dl->AddCircleFilled(ImVec2(pos.x + p.x, pos.y + p.y), p.size, IM_COL32(219, 0, 166, static_cast<int>((1 - (p.y / sz.y)) * 0.3f * 255)), 6);
-            }
-            { ImGui::PushFont(InterBold); const char* t = AY_OBFUSCATE("Satella Private"); ImVec2 ts = ImGui::CalcTextSize(t); dl->AddText(pos + ImVec2((sz.x - ts.x) * 0.5f, 14), ImColor(219, 0, 166), t); ImGui::PopFont(); }
-            ImGui::PushFont(InterRegular); ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.18f, 0.45f));
-            float curY = 55;
-            if (!Auth.Autenticado) {
-                dl->AddText(pos + ImVec2(padX, curY), ImColor(180,180,180), AY_OBFUSCATE("Usuario")); curY += 20;
-                ImGui::SetCursorPos(ImVec2(padX, curY)); ImGui::PushItemWidth(inputW); ImGui::InputText(AY_OBFUSCATE("##user"), Auth.Usuario, sizeof(Auth.Usuario)); curY += 48;
-                dl->AddText(pos + ImVec2(padX, curY), ImColor(180,180,180), AY_OBFUSCATE("Senha")); curY += 20;
-                ImGui::SetCursorPos(ImVec2(padX, curY)); ImGui::PushItemWidth(inputW); ImGui::InputText(AY_OBFUSCATE("##pass"), Auth.Senha, sizeof(Auth.Senha), ImGuiInputTextFlags_Password); curY += 60;
-                if (loggingIn) { dl->AddText(pos + ImVec2(padX, curY), ImColor(219,0,166), AY_OBFUSCATE("Autenticando...")); curY += 36; }
-                else {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(219/255.f,0/255.f,166/255.f,0.8f)); ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(219/255.f,0/255.f,166/255.f,1.0f)); ImGui::PushFont(InterBold);
-                    if (ImGui::Button(AY_OBFUSCATE("Entrar"), ImVec2(inputW, btnH))) { loggingIn = true; std::thread([=]() { __try { ThreadManualLogin(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] manualLogin crash"); } }).detach(); }
-                    ImGui::PopStyleColor(2); curY += 50;
-                    if (ImGui::Button(AY_OBFUSCATE("Registrar"), ImVec2(inputW, btnH))) { REGing = true; std::thread([=]() { __try { ThreadRegister(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] register crash"); } }).detach(); }
-                }
-            } else dl->AddText(pos + ImVec2(padX, curY), ImColor(219,0,166), AY_OBFUSCATE("Bem-vindo!"));
-            ImGui::PopStyleColor(); ImGui::PopFont(); ImGui::PopStyleVar();
-            ImGui::End(); ImGui::PopStyleVar();
-        } else if (CurrentWindow == 1) {
-            static bool g_AutoStarted = false;
-            if (Auth.Autenticado && !g_AutoStarted) {
-                g_AutoStarted = true;
-                std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
-                std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] InitHooks crash"); } }).detach();
-            }
-            ImGui::SetNextWindowSize(ImVec2(640, 440));
-            ImGui::Begin("Satella", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);
-            {
-                ImDrawList* dl = ImGui::GetWindowDrawList();
-                ImVec2 pos = ImGui::GetWindowPos(), sz = ImGui::GetWindowSize();
-                dl->AddRectFilled(pos, pos + sz, IM_COL32(0, 0, 0, 255), 12.0f);
-                if (!PerformanceMode) {
-                    for (auto& p : particles) {
-                        p.y -= p.speed * dt; p.x += sinf(p.y * 0.01f) * dt * 20;
-                        if (p.y < -10) { p.y = sz.y + 10; p.x = static_cast<float>(rand() % 2000) / 2000.0f * sz.x; }
-                        float a = (1 - (p.y / sz.y)) * 0.3f;
-                        dl->AddCircleFilled(ImVec2(pos.x + p.x, pos.y + p.y), p.size, IM_COL32(219, 0, 166, static_cast<int>(a * 255)), 6);
-                    }
-                }
-                ImGui::PushFont(InterBold);
-                ImVec2 title_size = ImGui::CalcTextSize("Satella Private");
-                dl->AddText(pos + ImVec2((sz.x - title_size.x) / 2, 15), ImColor(219, 0, 166), "Satella Private");
-                ImGui::PopFont();
-                static float AnimaTab2 = 0.0f;
-                static int LastCurrentTab2 = 2;
-                if (LastCurrentTab2 != CurrentTab) {
-                    AnimaTab2 = (LastCurrentTab2 > CurrentTab) ? -460.f : 460.f;
-                    LastCurrentTab2 = CurrentTab;
-                }
-                AnimaTab2 = ImLerp(AnimaTab2, 0.f, 6.f * ImGui::GetIO().DeltaTime);
-                float contentHeight = sz.y - 85.0f;
-                if (CurrentTab == 2) {
-                    float startX = 35 + AnimaTab2;
-                    ImGui::SetCursorPos(ImVec2(startX, 65));
-                    ImGui::CustomChild("Aimbot Normal", ImVec2(275, contentHeight));
-                    {
-                        ImGui::Checkbox("Aimbot", &AimbotLegit);
-                        if (AimbotLegit) {
-                            ImGui::KeyBind("Key", &AimbotKeyBind, (int*)0);
-                            ImGui::SliderInt("FOV", &AimbotFOV, 10, 500);
-                            ImGui::SliderInt("Max Distance", &AimbotMaxDistance, 10, 500);
-                            static const char* delayOpts[] = { "Instant", "235ms", "325ms", "415ms" };
-                            ImGui::Combo("Delay", &AimbotPeitosIndex, delayOpts, IM_ARRAYSIZE(delayOpts));
-                            ImGui::Checkbox("Ignore Knocked", &AimbotIgnoreKnocked);
-                            ImGui::Checkbox("Ignore Bots", &AimbotIgnoreBots);
-                        }
-                    }
-                    ImGui::EndCustomChild();
-                    ImGui::SetCursorPos(ImVec2(startX + 285, 65));
-                    ImGui::CustomChild("Aimbot Extras", ImVec2(275, contentHeight));
-                    {
-                        ImGui::Separator();
-                        ImGui::Checkbox("Silent Aim", &AimSilent);
-                        if (AimSilent) {
-                            ImGui::KeyBind("Key", &SilentAimKeyBind, (int*)0);
-                            ImGui::SliderFloat("FOV", &SilentAimFOV, 1.0f, 180.0f, "%.0f");
-                            ImGui::SliderInt("Distance", &SilentAimDistance, 10, 500);
-                            static const char* hitboxOpts[] = { "Head", "Body" };
-                            ImGui::Combo("Hitbox", &SilentAimHitbox, hitboxOpts, IM_ARRAYSIZE(hitboxOpts));
-                            ImGui::Checkbox("Ignore Knocked", &SilentAimIgnoreKnocked);
-                            ImGui::Checkbox("Ignore Bots", &SilentAimIgnoreBots);
-                        }
-                        ImGui::Separator();
-                        ImGui::Checkbox("Precision", &PrecisionMode);
-                        ImGui::Separator();
-                        ImGui::Checkbox("No Recoil", &NoRecoilEnabled);
-                        ImGui::Separator();
-                    }
-                    ImGui::EndCustomChild();
-                } else if (CurrentTab == 3) {
-                    float startX = 35 + AnimaTab2;
-                    ImGui::SetCursorPos(ImVec2(startX, 65));
-                    ImGui::CustomChild("ESP Features", ImVec2(275, contentHeight));
-                    {
-                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Player"); ImGui::PopFont();
-                        ImGui::Separator();
-                        ImGui::Combo("Box Type", &ESPCaixa, "Off\0Full\0Cornered\0");
-                        if (ESPCaixa > 0) ImGui::Checkbox("Filled Box", &ESPFilledBox);
-                        ImGui::Checkbox("Skeleton", &ESPEsqueleto);
-                        ImGui::Checkbox("Name", &ESPNome);
-                        ImGui::Separator();
-                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Info"); ImGui::PopFont();
-                        ImGui::Separator();
-                        ImGui::Checkbox("Health Text", &ESPHealthText);
-                        ImGui::Combo("Health Bar", &ESPHealthBarPos, "Off\0Left\0Right\0Top\0Bottom\0");
-                        ImGui::Checkbox("Distance", &ESPDistancia);
-                        ImGui::Checkbox("Weapon Name", &ESPWeaponName);
-                        ImGui::Separator();
-                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Visibility"); ImGui::PopFont();
-                        ImGui::Separator();
-                        ImGui::Checkbox("Show Teammates", &ESPMostrarTime);
-                        ImGui::Checkbox("Show Knocked", &ESPMostrarDerrubado);
-                    }
-                    ImGui::EndCustomChild();
-                    ImGui::SetCursorPos(ImVec2(startX + 285, 65));
-                    ImGui::CustomChild("ESP Visuals", ImVec2(275, contentHeight));
-                    {
-                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Effects"); ImGui::PopFont();
-                        ImGui::Separator();
-                        ImGui::Checkbox("Snap Lines", &ESPLinha);
-                        if (ESPLinha) ImGui::Combo("Line From", &linePosition, "Ground\0Top\0");
-                        ImGui::Separator();
-                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Display"); ImGui::PopFont();
-                        ImGui::Separator();
-                        ImGui::Checkbox("Enemy Counter", &ESPEnemyCounter);
-                        ImGui::Checkbox("Watermark", &Watermark);
-                        ImGui::Separator();
-                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Colors"); ImGui::PopFont();
-                        ImGui::Separator();
-                        ImGui::ColorEdit4("Box", colorBox, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
-                        ImGui::SameLine(); ImGui::Text(" Box");
-                        ImGui::ColorEdit4("Skeleton", colorSkeleton, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
-                        ImGui::SameLine(); ImGui::Text(" Skeleton");
-                        ImGui::ColorEdit4("Line", colorLine, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
-                        ImGui::SameLine(); ImGui::Text(" Line");
-                        ImGui::ColorEdit4("Name", colorName, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
-                        ImGui::SameLine(); ImGui::Text(" Name");
-                        ImGui::ColorEdit4("Distance", colorDistance, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
-                        ImGui::SameLine(); ImGui::Text(" Distance");
-                        ImGui::ColorEdit4("Dying", colorDying, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
-                        ImGui::SameLine(); ImGui::Text(" Dying");
-                        ImGui::Separator();
-                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Sizes"); ImGui::PopFont();
-                        ImGui::Separator();
-                        ImGui::SliderFloat("Text Size", &espTextSize, 8.0f, 24.0f, "%.0fpx");
-                        ImGui::SliderFloat("Line Thick", &espThickness, 0.5f, 4.0f, "%.1f");
-                        ImGui::SliderFloat("Max Dist", &espMaxDistance, 50.0f, 1000.0f, "%.0f");
-                        ImGui::SliderFloat("BG Alpha", &espBgAlpha, 0.0f, 0.5f, "%.2f");
-                    }
-                    ImGui::EndCustomChild();
-                } else if (CurrentTab == 4) {
-                    float startX = 35 + AnimaTab2;
-                    ImGui::SetCursorPos(ImVec2(startX, 65));
-                    ImGui::BeginGroup();
-                    ImGui::CustomChild("Weapons", ImVec2(275, contentHeight));
-                    {
-                        ImGui::Checkbox("Weapon Attributes", &WeaponAttributesEnabled);
-                        if (WeaponAttributesEnabled) ImGui::SliderFloat("Speed", &WeaponSpeedValue, 1.0f, 2.0f, "%.2fx");
-                        ImGui::Separator();
-                        ImGui::Checkbox("Spinbot", &SpinBot);
-                        if (SpinBot) {
-                            ImGui::Combo("Mode", &SpinbotMode, "Continuous\0Random\045\xc2\xb0 Step\0");
-                            ImGui::SliderFloat("Speed", &SpinbotSpeed, 1.0f, 30.0f, "%.0f");
-                        }
-                    }
-                    ImGui::EndCustomChild();
-                    ImGui::SetCursorPos(ImVec2(startX + 285, 65));
-                    ImGui::CustomChild("Extra", ImVec2(275, contentHeight));
-                    {
-                        ImGui::Checkbox("Pixel Estendido", &PatchPixelEstendido);
-                        ImGui::Checkbox("Visao 10X", &PatchVisao10X);
-                        ImGui::Checkbox("No Recoil (AOB)", &PatchNoRecoilAOB);
-                        ImGui::Checkbox("FOV 360", &PatchFOV360);
-                        ImGui::Checkbox("Bala Infinita", &PatchBalaInfinita);
-                        ImGui::Separator();
-                    }
-                    ImGui::EndCustomChild();
-                    ImGui::EndGroup();
-                } else if (CurrentTab == 5) {
-                    float startX = 35 + AnimaTab2;
-                    ImGui::SetCursorPos(ImVec2(startX, 65));
-                    ImGui::BeginGroup();
-                    ImGui::CustomChild("Settings", ImVec2(275, contentHeight));
-                    {
-                        ImGui::Checkbox("Stream Mode", &StreamMode);
-                        ImGui::Checkbox("Performance Mode", &PerformanceMode);
-                        ImGui::Separator();
-                        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(180, 40, 50, 200));
-                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(210, 50, 60, 230));
-                        if (ImGui::Button("UNLOAD (F7)", ImVec2(-1, 38))) { UnloadCheat(); }
-                        if (!Auth.Attached && Auth.Autenticado) {
-                            ImGui::SameLine();
-                            if (ImGui::Button("Reconectar", ImVec2(-1, 38))) {
-                                std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
-                            }
-                        }
-                        ImGui::PopStyleColor(2);
-                    }
-                    ImGui::EndCustomChild();
-                    ImGui::SetCursorPos(ImVec2(startX + 285, 65));
-                    ImGui::CustomChild("Info", ImVec2(275, contentHeight));
-                    {
-                        ImGui::TextDisabled("Satella Private");
-                        ImGui::TextDisabled("Build: v7a");
-                        ImGui::Separator();
-                        if (Auth.Attached) ImGui::TextColored(ImVec4(0.2f,1,0.2f,1), "Status: Conectado");
-                        else ImGui::TextColored(ImVec4(1,0.2f,0.2f,1), "Status: Desconectado");
-                    }
-                    ImGui::EndCustomChild();
-                    ImGui::EndGroup();
-                }
-                dl->AddRectFilled(ImVec2(pos.x, pos.y + sz.y - 20), ImVec2(pos.x + sz.x, pos.y + sz.y), IM_COL32(0, 0, 0, 255), 12.0f, ImDrawFlags_RoundCornersBottom);
-                ImGui::SetCursorPos(ImVec2(0, sz.y - 20));
-                ImGui::BeginChild("BottomTabs", ImVec2(sz.x, 20), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar);
-                {
-                    float tab_width = 55;
-                    float total_tabs_width = tab_width * 4;
-                    ImGui::SetCursorPosX((sz.x - total_tabs_width) / 2);
-                    ImGui::PushFont(InterMedium);
-                    if (ImGui::Tab("Aimbot", "", CurrentTab == 2)) CurrentTab = 2;
-                    ImGui::SameLine(0, 0);
-                    if (ImGui::Tab("ESP", "", CurrentTab == 3)) CurrentTab = 3;
-                    ImGui::SameLine(0, 0);
-                    if (ImGui::Tab("Misc", "", CurrentTab == 4)) CurrentTab = 4;
-                    ImGui::SameLine(0, 0);
-                    if (ImGui::Tab("Settings", "", CurrentTab == 5)) CurrentTab = 5;
-                    ImGui::PopFont();
-                }
-                ImGui::EndChild();
-            }
-            ImGui::End();
-        }
-    }
-
-    SaveKeyBinds();
-
-    // -- Weapon Attributes --
-    if (Auth.Attached && cachedLocalPlayer && cachedLocalPlayer < 0x100000000ULL) {
-        WeaponAttributes::Apply(static_cast<uint32_t>(cachedLocalPlayer), WeaponSpeedValue, WeaponAttributesEnabled);
-    }
-
-    // No Recoil (thread)
-    if (Auth.Attached) Exploit::NoRecoil::Work();
-
-    // AOB Patches (aplica quando toggle liga)
-    if (Auth.Attached && cachedLocalPlayer) AplicarPatchesAOB();
-
-    // Spinbot
-    if (Auth.Attached && cachedLocalPlayer) {
-        SpinbotImpl::Execute(cachedLocalPlayer);
-    }
-
-    // Watermark
-    if (Watermark && Auth.Autenticado) { DWORD wmS = SafeTick(); if (wmS) { int hh = (int)(wmS / 3600000) % 24, mm = (int)(wmS / 60000) % 60, ss = (int)(wmS / 1000) % 60; char b[128]; snprintf(b, sizeof(b), "Satella Private | %02d:%02d:%02d", hh, mm, ss); DrawTextShadowIm(b, 10, 10, 219/255.f, 0, 166/255.f, 14); } }
-
-    // ESP
-    ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always); ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
-    ImGui::Begin("##ESPWindow", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus);
-    SafeRenderESP(static_cast<int>(ImGui::GetIO().DisplaySize.x), static_cast<int>(ImGui::GetIO().DisplaySize.y));
-    ImGui::End();
-
-    ImGui::EndFrame(); ImGui::Render();
-    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-}
-
-static void D3DPresentHook_Init(IDXGISwapChain* sc) {
-    ID3D11Device* d = nullptr; ID3D11DeviceContext* c = nullptr;
-    if (SUCCEEDED(sc->GetDevice(IID_PPV_ARGS(&d))) && d) {
-        d->GetImmediateContext(&c);
-    } else {
-        // Fallback: create device from scratch (won't share resources but renders)
-        D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, NULL, 0, D3D11_SDK_VERSION, &d, NULL, &c);
-    }
-    if (d && c) {
-        LogCrash("[D3D] Init DX11 OK");
-        ImGui_ImplDX11_Init(d, c);
-        g_d3dReady = true;
-    } else {
-        LogCrash("[D3D] Init DX11 FAILED");
-    }
-    if (d) d->Release(); if (c) c->Release();
-}
-
-static HRESULT WINAPI PresentHook(IDXGISwapChain* sc, UINT si, UINT f) {
-    __try {
-        if (!g_d3dReady) D3DPresentHook_Init(sc);
-        if (g_d3dReady) D3DRenderFrame();
-    } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[D3D] PresentHook crash"); }
-    return g_origPresent(sc, si, f);
-}
-
-static bool HookD3D11Present(HWND targetWnd) {
-    // Create dummy swap chain to get Present vtable address
-    ID3D11Device* dev = nullptr; IDXGISwapChain* sc = nullptr; ID3D11DeviceContext* ctx = nullptr;
-    DXGI_SWAP_CHAIN_DESC sd = {};
-    sd.BufferCount = 1; sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-    sd.BufferDesc.Width = 1; sd.BufferDesc.Height = 1;
-    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-    sd.OutputWindow = GetDesktopWindow(); sd.SampleDesc.Count = 1; sd.Windowed = TRUE;
-    HRESULT hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &sd, &sc, &dev, nullptr, &ctx);
-    if (FAILED(hr)) hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &sd, &sc, &dev, nullptr, &ctx);
-    if (FAILED(hr) || !sc) return false;
-    void** vt = *(void***)sc; g_origPresent = (PresentFn)vt[8];
-    PresentFn origAddr = g_origPresent;
-    MH_Initialize();
-    MH_CreateHook(g_origPresent, PresentHook, (void**)&g_origPresent);
-    MH_EnableHook(origAddr);
-    if (sc) sc->Release(); if (dev) dev->Release(); if (ctx) ctx->Release();
-    // Subclass target window for input
-    if (targetWnd) g_origWndProc = (WNDPROC)SetWindowLongPtr(targetWnd, GWLP_WNDPROC, (LONG_PTR)BSWndProc);
-    LogCrash("[D3D] Hook installed");
-    return true;
-}
-
-
 
 static DWORD RunCmdSync(const char* cmd) {
     STARTUPINFOA si = { sizeof(si) }; PROCESS_INFORMATION pi = { 0 };
@@ -1341,80 +1002,21 @@ static void deep_clean_internal() {
     if(OpenClipboard(NULL)){EmptyClipboard();CloseClipboard();}
 }
 
-
-
-static void LogCrash(const char* context) {
+static void RenderLoop() {
     __try {
-        // Rate limit: max 1 write per 2 seconds per unique message
-        static DWORD lastLogTick[64] = {};
-        static const char* lastLogMsg[64] = {};
-        static int logSlot = 0;
-        DWORD now = GetTickCount();
-        bool skip = false;
-        for (int i = 0; i < 64; i++) {
-            if (lastLogMsg[i] == context && (now - lastLogTick[i]) < 2000) { skip = true; break; }
-        }
-        if (skip) return;
-        lastLogMsg[logSlot % 64] = context;
-        lastLogTick[logSlot % 64] = now;
-        logSlot++;
-
-        wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
-        wcscat_s(tmp, L"satella_crash.txt");
-        HANDLE h = CreateFileW(tmp, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
-        if (h != INVALID_HANDLE_VALUE) {
-            SetFilePointer(h, 0, NULL, FILE_END);
-            DWORD w;
-            WriteFile(h, context, (DWORD)strlen(context), &w, NULL);
-            WriteFile(h, "\n", 1, &w, NULL);
-            CloseHandle(h);
-        }
-    } __except(EXCEPTION_EXECUTE_HANDLER) {}
-}
-
-static DWORD SafeTick() {
-    __try { return GetTickCount64(); } __except(EXCEPTION_EXECUTE_HANDLER) { return 0; }
-}
-
-__declspec(noinline) static void RenderLoop() {
-    volatile int dummy = 0;
-    LogCrash("[RL] started");
-    DWORD iter = 0;
-    int renderCrashCount = 0;
-    while (!g_Unload) {
-        iter++;
-        if (iter % 60 == 0) {
-            char buf[256];
-            RECT wr = {0}; RECT hr = {0}; RECT tr = {0};
-            BOOL hwOK = IsWindow(hwnd) && GetWindowRect(hwnd, &hr);
-            BOOL twOK = IsWindow(hTargetWindow) && GetWindowRect(hTargetWindow, &tr);
-            BOOL fg = hwOK && (GetForegroundWindow() == hwnd);
-            if (hwOK) { 
-                wr.left = hr.left; wr.top = hr.top;
-                wr.right = hr.right; wr.bottom = hr.bottom;
+        using namespace std::chrono;
+        auto lastRender = steady_clock::now();
+        while (!g_Unload) {
+            handleKeyPresses();
+            auto now = steady_clock::now();
+            long long frameInterval = PerformanceMode ? 33333333 : 16666666;
+            if (duration_cast<nanoseconds>(now - lastRender).count() >= frameInterval) {
+                lastRender = now;
+                runRenderTick();
             }
-            sprintf_s(buf, "[RL] iter=%u hwnd=(%d,%d %dx%d) fg=%d target=(%d,%d %dx%d)", 
-                iter,
-                hwOK ? wr.left : 0, hwOK ? wr.top : 0,
-                hwOK ? (hr.right-hr.left) : 0, hwOK ? (hr.bottom-hr.top) : 0,
-                fg,
-                twOK ? tr.left : 0, twOK ? tr.top : 0,
-                twOK ? (tr.right-tr.left) : 0, twOK ? (tr.bottom-tr.top) : 0);
-            LogCrash(buf);
-            // Every 180 iterations, try to force overlay to front
-            if (iter % 180 == 0 && hwOK) {
-                SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
-                BringWindowToTop(hwnd);
-            }
+            Sleep(PerformanceMode ? 5 : 1);
         }
-        __try { handleKeyPresses(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[RL] handleKeyPresses crash"); }
-        if (renderCrashCount >= 5) {
-            Sleep(3000);
-            renderCrashCount = 0;
-            continue;
-        }
-        __try { runRenderTick(); renderCrashCount = 0; } __except(EXCEPTION_EXECUTE_HANDLER) { renderCrashCount++; LogCrash("[RL] runRenderTick crash"); }
-        Sleep(PerformanceMode ? 5 : 1);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
     }
 }
 
@@ -1513,49 +1115,6 @@ void UnloadCheat() {
     running = false;
 }
 
-static void ThreadAutoLogin() {
-    bool ok = ka_init() && ka_login(Auth.Usuario, Auth.Senha);
-    loggingIn = false;
-    if (ok) {
-        CurrentWindow = 1; CurrentTab = 2;
-        Auth.Autenticado = true;
-        NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
-    } else {
-        memset(Auth.Usuario, 0, sizeof(Auth.Usuario));
-        memset(Auth.Senha, 0, sizeof(Auth.Senha));
-        NotificationManager::AdicionarNotificacao("Auto-login falhou, faca login manual", 5.0f, true);
-    }
-}
-
-static void ThreadManualLogin() {
-    bool ok = ka_init() && ka_login(Auth.Usuario, Auth.Senha);
-    loggingIn = false;
-    if (ok) {
-        save_credentials(Auth.Usuario, Auth.Senha);
-        NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
-        CurrentWindow = 1; CurrentTab = 2;
-        Auth.Autenticado = true;
-    } else {
-        const char* err = ka_get_error();
-        NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no AUTH", 5.0f, true);
-    }
-}
-
-static void ThreadRegister() {
-    bool ok = ka_init() && ka_register(RegUser, RegPass, RegKey);
-    regLoading = false;
-    if (ok) {
-        NotificationManager::AdicionarNotificacao("Conta criada! Faca AUTH.");
-        strcpy(Auth.Usuario, RegUser);
-        strcpy(Auth.Senha, RegPass);
-        memset(RegUser,0,sizeof(RegUser)); memset(RegPass,0,sizeof(RegPass)); memset(RegKey,0,sizeof(RegKey));
-        REGing = false;
-    } else {
-        const char* err = ka_get_error();
-        NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no registro", 5.0f, true);
-    }
-}
-
 void ReInject() {
     if (!hwnd) return;
     ShowWindow(hwnd, SW_SHOW);
@@ -1565,15 +1124,13 @@ void ReInject() {
     StopEntityCache();
     Sleep(100);
     UpdateEntityCache();
-    std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
+    std::thread(NetworkInit).detach();
     std::thread([]() {
-        __try {
         Sleep(2000);
         LoadLibraryAndHook();
         _0xW3X4Y5Z6::Start();
         _0xPrecision::Start();
         LockAim::Start();
-        } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] ReInject crash"); }
     }).detach();
 }
 
@@ -1662,17 +1219,52 @@ static void ClearPEBDebugFlags() {
     }
 }
 
-
-
-#pragma optimize("", off)
-static HRESULT SafeCoInitialize() {
-    __try { return CoInitializeEx(NULL, COINIT_APARTMENTTHREADED); }
-    __except(EXCEPTION_EXECUTE_HANDLER) { return E_FAIL; }
-}
-#pragma optimize("", on)
-
 static void InitIdowImpl() {
-    LogCrash("[InitIdowImpl] entered");
+    // --- Anti-KG Injection Shield ---
+    { HANDLE hTok; if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &hTok)) {
+        TOKEN_PRIVILEGES tp; tp.PrivilegeCount = 1; tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+        LookupPrivilegeValueW(NULL, AY_OBFUSCATE(L"SeDebugPrivilege"), &tp.Privileges[0].Luid);
+        AdjustTokenPrivileges(hTok, FALSE, &tp, sizeof(tp), NULL, NULL); CloseHandle(hTok);
+    } }
+
+    // --- ADVANCED EVASION / MEMORY INTEGRITY / KERNEL EVASION desabilitados ---
+    // (causavam crash no emulador)
+    // AdvancedEvasion::InitializeAdvancedEvasion(g_hDll);
+    // MemoryIntegrity::InitializeIntegritySystem();
+    // KernelEvasion::DisableETWTracing();
+    // KernelEvasion::ClearDebugOutput();
+    
+    static const wchar_t* guardProcs[] = {
+        AY_OBFUSCATE(L"g.fix"), AY_OBFUSCATE(L"g_fix"), AY_OBFUSCATE(L"SatellaGate"), AY_OBFUSCATE(L"Phantom"), AY_OBFUSCATE(L"Keller"), AY_OBFUSCATE(L"DFIRemv"), AY_OBFUSCATE(L"PiadaGuard")
+    };
+    static auto _CreateToolhelp32Snapshot_i = (decltype(&CreateToolhelp32Snapshot))GetProcAddress(GetModuleHandleA("kernel32.dll"), "CreateToolhelp32Snapshot");
+    static auto _Process32FirstW_i = (decltype(&Process32FirstW))GetProcAddress(GetModuleHandleA("kernel32.dll"), "Process32FirstW");
+    static auto _Process32NextW_i = (decltype(&Process32NextW))GetProcAddress(GetModuleHandleA("kernel32.dll"), "Process32NextW");
+    static auto _OpenProcess_i = (decltype(&OpenProcess))GetProcAddress(GetModuleHandleA("kernel32.dll"), "OpenProcess");
+    static auto _TerminateProcess_i = (decltype(&TerminateProcess))GetProcAddress(GetModuleHandleA("kernel32.dll"), "TerminateProcess");
+    HANDLE gs = _CreateToolhelp32Snapshot_i ? _CreateToolhelp32Snapshot_i(TH32CS_SNAPPROCESS, 0) : NULL;
+    if (_Process32FirstW_i && _Process32NextW_i && gs != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W gp = { sizeof(gp) };
+        if (_Process32FirstW_i(gs, &gp)) do {
+            for (int gi = 0; gi < ARRAYSIZE(guardProcs); gi++) {
+                if (wcsstr(gp.szExeFile, guardProcs[gi])) {
+                    HANDLE hk = _OpenProcess_i ? _OpenProcess_i(PROCESS_TERMINATE, FALSE, gp.th32ProcessID) : NULL;
+                    if (hk) { if (_TerminateProcess_i) _TerminateProcess_i(hk, 0); CloseHandle(hk); }
+                    break;
+                }
+            }
+        } while (_Process32NextW_i(gs, &gp));
+        CloseHandle(gs);
+    }
+    StopKellerETW();
+    ClearPEBDebugFlags();
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    if (ntdll) {
+        typedef NTSTATUS(NTAPI *NtSIT)(HANDLE,ULONG,PVOID,ULONG);
+        NtSIT pNtSIT = (NtSIT)GetProcAddress(ntdll,"NtSetInformationThread");
+        if (pNtSIT) pNtSIT(GetCurrentThread(),0x11,NULL,0);
+    }
+    InitializeConsole();
     JanelaAlvo = LookupWindowByClassName(AY_OBFUSCATE("BlueStacksApp"));
     if (!JanelaAlvo) {
         struct AltSearch {
@@ -1703,19 +1295,12 @@ static void InitIdowImpl() {
     }
     if (!JanelaAlvo) { JanelaAlvo = NULL; }
     LoadKeyBinds();
-
-    // Check if we're in the target process (BlueStacks)
-    bool inTargetProcess = false;
-    {
-        DWORD targetPid = 0;
-        if (JanelaAlvo) { GetWindowThreadProcessId(JanelaAlvo, &targetPid); }
-        inTargetProcess = (targetPid == GetCurrentProcessId());
-    }
-
     setupWindow(JanelaAlvo);
     if (!hwnd) { return; }
+    SetWindowDisplayAffinity(hwnd, 0x11);
 
-    HRESULT hr = SafeCoInitialize();
+    // ─── Volume init ───
+    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 
     // ─── Global UI Style (preto escuro) ───
     {
@@ -1755,32 +1340,14 @@ static void InitIdowImpl() {
         c[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.60f, 0.60f, 0.65f, 0.80f);
     }
 
-    LogCrash("[InitIdowImpl] entering RenderLoop");
-    // Try D3D11 Present hook if in target process (non-blocking)
-    if (inTargetProcess && JanelaAlvo) {
-        LogCrash("[Init] In-process target, installing D3D11 Present hook");
-        HRESULT hr = SafeCoInitialize();
-        if (HookD3D11Present(JanelaAlvo)) {
-            LogCrash("[Init] D3D hook installed, GDI overlay will be invisible");
-        } else {
-            LogCrash("[Init] D3D hook failed, using GDI overlay");
-        }
-    }
     RenderLoop();
 
-cleanup_d3d:
     // Shutdown ImGui e overlay
-    ImGui_ImplWin32_Shutdown(); ImGui_ImplDX11_Shutdown(); ImGui::DestroyContext();
-    if (g_origPresent) {
-        MH_DisableHook(g_origPresent); MH_RemoveHook(g_origPresent);
-    }
+    ImGui_ImplWin32_Shutdown(); ImGui::DestroyContext();
     delete[] g_Buffer; g_Buffer = nullptr; g_BufferWidth = g_BufferHeight = 0;
     if (hwnd) {
+        SetWindowDisplayAffinity(hwnd, 0);
         ::DestroyWindow(hwnd);
-    }
-    // Restore original WndProc if we subclassed
-    if (g_origWndProc && JanelaAlvo) {
-        SetWindowLongPtr(JanelaAlvo, GWLP_WNDPROC, (LONG_PTR)g_origWndProc);
     }
     ::UnregisterClassA(wc.lpszClassName, wc.hInstance);
 
@@ -1825,7 +1392,17 @@ cleanup_d3d:
 void InitIdow() {
     __try {
         InitIdowImpl();
-    } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[InitIdow] crash in InitIdowImpl"); }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
+        wcscat_s(tmp, L"satella_crash.txt");
+        HANDLE hCrash = CreateFileW(tmp, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
+        if (hCrash != INVALID_HANDLE_VALUE) {
+            SetFilePointer(hCrash, 0, NULL, FILE_END);
+            static const char* msg = "InitIdow crash\n";
+            DWORD w; WriteFile(hCrash, msg, (DWORD)strlen(msg), &w, NULL);
+            CloseHandle(hCrash);
+        }
+    }
 }
 
 #include "Imports/SilentAim.cpp"
