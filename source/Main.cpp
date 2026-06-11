@@ -960,19 +960,18 @@ static void DiagLog(const char* msg);
 
 static void RenderLoop() {
     DiagLog("[D] RenderLoop ENTERED");
-    __try {
-        auto lastTick = GetTickCount64();
-        while (!g_Unload) {
-            handleKeyPresses();
+    auto lastTick = GetTickCount64();
+    while (!g_Unload) {
+        __try { handleKeyPresses(); } __except(EXCEPTION_EXECUTE_HANDLER) { DiagLog("[RL] handleKeyPresses crash"); }
+        __try {
             auto now = GetTickCount64();
             long long frameMs = PerformanceMode ? 33 : 16;
             if (now - lastTick >= frameMs) {
                 lastTick = now;
                 runRenderTick();
             }
-            Sleep(PerformanceMode ? 5 : 1);
-        }
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        } __except(EXCEPTION_EXECUTE_HANDLER) { DiagLog("[RL] renderTick crash"); }
+        Sleep(PerformanceMode ? 5 : 1);
     }
 }
 
