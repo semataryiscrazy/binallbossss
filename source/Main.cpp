@@ -1279,7 +1279,12 @@ static HRESULT WINAPI PresentHook(IDXGISwapChain* sc, UINT si, UINT f) {
         if (!g_d3dReady) D3DPresentHook_Init(sc);
         if (g_d3dReady) D3DRenderFrame();
     } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[D3D] PresentHook crash"); }
-    return g_origPresent(sc, si, f);
+    __try {
+        return g_origPresent(sc, si, f);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        LogCrash("[D3D] g_origPresent crash");
+        return E_FAIL;
+    }
 }
 
 static bool HookD3D11Present(HWND targetWnd) {
