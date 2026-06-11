@@ -1237,10 +1237,10 @@ static void D3DRenderFrame() {
         bb->Release();
         if (rtv) {
             g_d3dCtx->OMSetRenderTargets(1, &rtv, nullptr);
-            rtv->Release();
         }
     }
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+    if (rtv) rtv->Release();
 }
 
 static void D3DPresentHook_Init(IDXGISwapChain* sc) {
@@ -1266,12 +1266,7 @@ static void D3DPresentHook_Init(IDXGISwapChain* sc) {
             outputWnd = scd.OutputWindow;
         }
         if (outputWnd) {
-            // Subclass the real output window for ImGui input
-            if (outputWnd != JanelaAlvo) {
-                g_origOutputWndProc = (WNDPROC)SetWindowLongPtr(outputWnd, GWLP_WNDPROC, (LONG_PTR)BSWndProc);
-                g_outputWndSubclassed = outputWnd;
-            }
-            // Re-init Win32 backend with the real output window
+            // Re-init Win32 backend with the real output window for correct input coords
             ImGui_ImplWin32_Shutdown();
             ImGui_ImplWin32_Init(outputWnd);
         } else if (JanelaAlvo) {
