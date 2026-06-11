@@ -467,13 +467,7 @@ void runRenderTick() {
     if ((GetAsyncKeyState(VK_F8) & 1) || (GetAsyncKeyState(VK_INSERT) & 1)) {
         Auth.MenuVisible = !Auth.MenuVisible;
         Auth.OverlayView = true;
-        // Força sempre por cima do emulador
         SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-        if (Auth.MenuVisible) {
-            SetForegroundWindow(hwnd);
-        } else {
-            SetForegroundWindow(hTargetWindow);
-        }
     }
 
     // ─── Partículas (original) ───
