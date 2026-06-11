@@ -414,8 +414,6 @@ typedef HRESULT(WINAPI* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent = nullptr;
 static bool g_d3dReady = false;
 static WNDPROC g_origWndProc = nullptr;
-static WNDPROC g_origOutputWndProc = nullptr;
-static HWND g_outputWndSubclassed = nullptr;
 static IDXGISwapChain* g_hookedSC = nullptr;
 static ID3D11Device* g_d3dDev = nullptr;
 static ID3D11DeviceContext* g_d3dCtx = nullptr;
@@ -437,20 +435,7 @@ void runRenderTick() {
     }
     // F7 = Unload completo
     if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
-    // F8 = Mostra/oculta overlay (kept for legacy — KeysBind.Menu in handleKeyPresses is the primary)
-    if ((GetAsyncKeyState(VK_F8) & 1)) {
-        Auth.MenuVisible = !Auth.MenuVisible;
-        Auth.OverlayView = true;
-        if (!g_d3dReady) {
-            if (Auth.MenuVisible) {
-                SetForegroundWindow(hwnd);
-            } else {
-                SetForegroundWindow(hTargetWindow);
-            }
-        }
-    }
-
-    if (!g_d3dReady) {
+    {
         RECT wr = {0};
         if (!IsWindow(hTargetWindow) || !GetWindowRect(hTargetWindow, &wr)) {
             hTargetWindow = FindRenderWindow(NULL);
@@ -463,7 +448,9 @@ void runRenderTick() {
         SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch,
             SWP_NOACTIVATE | SWP_NOCOPYBITS);
 
-        if (!SafeNewFrame()) return;
+        if (!g_d3dReady) {
+            if (!SafeNewFrame()) return;
+        }
     }
 
     if (!g_d3dReady) {
@@ -910,10 +897,13 @@ static void SafeRenderGDI() {
 // ─── D3D11 Present Hook (for BlueStacks in-process overlay) ───
 
 static LRESULT CALLBACK BSWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (Auth.MenuVisible && ImGui::GetCurrentContext())
-        ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam);
-    WNDPROC orig = (hWnd == JanelaAlvo) ? g_origWndProc : g_origOutputWndProc;
-    return CallWindowProc(orig, hWnd, msg, wParam, lParam);
+    __try {
+        if (Auth.MenuVisible && ImGui::GetCurrentContext())
+            ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam);
+        if (hWnd == JanelaAlvo && g_origWndProc)
+            return CallWindowProc(g_origWndProc, hWnd, msg, wParam, lParam);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+    return DefWindowProc(hWnd, msg, wParam, lParam);
 }
 
 static void D3DRenderFrame() {
@@ -1259,7 +1249,7 @@ static void D3DPresentHook_Init(IDXGISwapChain* sc) {
         ImGui_ImplDX11_Init(d, c);
         g_hookedSC = sc;
         if (g_hookedSC) g_hookedSC->AddRef();
-        // Get swap chain output window — this is the window that matches our rendering
+        // Get swap chain output window for input coordinate mapping
         DXGI_SWAP_CHAIN_DESC scd = {};
         HWND outputWnd = NULL;
         if (SUCCEEDED(sc->GetDesc(&scd)) && scd.OutputWindow) {
@@ -1273,7 +1263,7 @@ static void D3DPresentHook_Init(IDXGISwapChain* sc) {
             ImGui_ImplWin32_Shutdown();
             ImGui_ImplWin32_Init(JanelaAlvo);
         }
-        // Hide GDI overlay window so it doesn't block D3D or steal input
+        // Hide GDI overlay window so it doesn't block D3D
         if (hwnd) ShowWindow(hwnd, SW_HIDE);
         g_d3dReady = true;
     } else {
@@ -1307,7 +1297,7 @@ static bool HookD3D11Present(HWND targetWnd) {
     MH_CreateHook(g_origPresent, PresentHook, (void**)&g_origPresent);
     MH_EnableHook(origAddr);
     if (sc) sc->Release(); if (dev) dev->Release(); if (ctx) ctx->Release();
-    // Subclass target window for input
+    // Subclass target window for input (protected by __try/__except in BSWndProc)
     if (targetWnd) g_origWndProc = (WNDPROC)SetWindowLongPtr(targetWnd, GWLP_WNDPROC, (LONG_PTR)BSWndProc);
     LogCrash("[D3D] Hook installed");
     return true;
@@ -1794,7 +1784,6 @@ static void InitIdowImpl() {
     }
     RenderLoop();
 
-cleanup_d3d:
     // Shutdown ImGui e overlay
     ImGui_ImplWin32_Shutdown(); ImGui_ImplDX11_Shutdown(); ImGui::DestroyContext();
     if (g_origPresent) {
@@ -1810,10 +1799,6 @@ cleanup_d3d:
     // Restore original WndProc if we subclassed
     if (g_origWndProc && JanelaAlvo) {
         SetWindowLongPtr(JanelaAlvo, GWLP_WNDPROC, (LONG_PTR)g_origWndProc);
-    }
-    if (g_origOutputWndProc && g_outputWndSubclassed) {
-        SetWindowLongPtr(g_outputWndSubclassed, GWLP_WNDPROC, (LONG_PTR)g_origOutputWndProc);
-        g_outputWndSubclassed = nullptr;
     }
     ::UnregisterClassA(wc.lpszClassName, wc.hInstance);
 
