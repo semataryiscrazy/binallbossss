@@ -1534,8 +1534,6 @@ static void ThreadAutoLogin() {
         CurrentWindow = 1; CurrentTab = 2;
         Auth.Autenticado = true;
         NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
-        std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
-        std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] InitHooks crash"); } }).detach();
     } else {
         memset(Auth.Usuario, 0, sizeof(Auth.Usuario));
         memset(Auth.Senha, 0, sizeof(Auth.Senha));
@@ -1551,8 +1549,6 @@ static void ThreadManualLogin() {
         NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
         CurrentWindow = 1; CurrentTab = 2;
         Auth.Autenticado = true;
-        std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
-        std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] InitHooks crash"); } }).detach();
     } else {
         const char* err = ka_get_error();
         NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no AUTH", 5.0f, true);
