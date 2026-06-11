@@ -968,7 +968,20 @@ static DWORD SafeTick() {
 }
 
 static void RenderLoop() {
+    LogCrash("[RL] started");
+    DWORD iter = 0;
     while (!g_Unload) {
+        iter++;
+        if (iter % 60 == 0) {
+            char buf[128];
+            RECT wr = {0}; RECT hr = {0};
+            BOOL hwOK = IsWindow(hwnd) && GetWindowRect(hwnd, &hr);
+            BOOL twOK = IsWindow(hTargetWindow) && GetWindowRect(hTargetWindow, &wr);
+            sprintf_s(buf, "[RL] iter=%u hwnd=%p(%dx%d) target=%p(%dx%d)", iter, hwnd, 
+                hwOK ? (hr.right-hr.left) : 0, hwOK ? (hr.bottom-hr.top) : 0,
+                hTargetWindow, twOK ? (wr.right-wr.left) : 0, twOK ? (wr.bottom-wr.top) : 0);
+            LogCrash(buf);
+        }
         __try { handleKeyPresses(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[RL] handleKeyPresses crash"); }
         __try { runRenderTick(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[RL] runRenderTick crash"); }
         Sleep(PerformanceMode ? 5 : 1);
