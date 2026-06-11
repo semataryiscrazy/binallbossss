@@ -412,16 +412,6 @@ void runRenderTick() {
         hTargetWindow = FindRenderWindow(NULL);
     }
 
-    // Se a janela overlay sumiu, recria ela por cima do emulador
-    if (!IsWindow(hwnd) && IsWindow(hTargetWindow)) {
-        static DWORD lastRecreate = 0;
-        DWORD now2 = GetTickCount();
-        if (now2 - lastRecreate > 3000) { // Tenta recriar a cada 3s
-            lastRecreate = now2;
-            setupWindow(hTargetWindow);
-        }
-    }
-
     if (IsWindow(hTargetWindow) && GetWindowRect(hTargetWindow, &wr)) {
         int cw = wr.right - wr.left, ch = wr.bottom - wr.top;
         if (cw > 0 && ch > 0 && !IsIconic(hTargetWindow)) {
