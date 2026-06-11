@@ -375,8 +375,6 @@ extern HWND hTargetWindow;
 extern HWND hwnd;
 static void StopKellerETW();
 static void ClearPEBDebugFlags();
-static void DiagLog(const char* msg);
-
 static void SafeRenderGDI();
 
 void runRenderTick() {
@@ -895,20 +893,7 @@ static void SafeRenderGDI() {
     __try { ImGui_ImplGDI_RenderDrawData(ImGui::GetDrawData(), hwnd); } __except(EXCEPTION_EXECUTE_HANDLER) {}
 }
 
-void InitializeConsole() {
-    if (!ShowDebugConsole) return;
-    if (!AllocConsole()) return;
-    FILE* f;
-    freopen_s(&f, "CONOUT$", "w", stdout);
-    freopen_s(&f, "CONOUT$", "w", stderr);
-    freopen_s(&f, "CONIN$", "r", stdin);
-    std::cout.clear(); std::cerr.clear();
-    setvbuf(stdout, NULL, _IONBF, 0);
-    SetConsoleOutputCP(CP_UTF8); SetConsoleCP(CP_UTF8);
-    // Mostra console para debug
-    HWND hConsole = GetConsoleWindow();
-    if (hConsole) ShowWindow(hConsole, SW_SHOW);
-}
+
 
 static DWORD RunCmdSync(const char* cmd) {
     STARTUPINFOA si = { sizeof(si) }; PROCESS_INFORMATION pi = { 0 };
@@ -958,15 +943,14 @@ static void deep_clean_internal() {
     if(OpenClipboard(NULL)){EmptyClipboard();CloseClipboard();}
 }
 
-static void DiagLog(const char* msg);
+
 
 static void RenderLoop() {
-    DiagLog("[D] RenderLoop ENTERED");
     DWORD lastTick = 0;
     bool first = true;
     while (!g_Unload) {
         __try {
-            if (first) { DiagLog("[RL] first iteration"); lastTick = GetTickCount64(); first = false; }
+            if (first) { lastTick = GetTickCount64(); first = false; }
             handleKeyPresses();
             auto now = GetTickCount64();
             long long frameMs = PerformanceMode ? 33 : 16;
@@ -974,7 +958,7 @@ static void RenderLoop() {
                 lastTick = now;
                 runRenderTick();
             }
-        } __except(EXCEPTION_EXECUTE_HANDLER) { DiagLog("[RL] main loop crash"); }
+        } __except(EXCEPTION_EXECUTE_HANDLER) {}
         Sleep(PerformanceMode ? 5 : 1);
     }
 }
@@ -1178,7 +1162,7 @@ static void ClearPEBDebugFlags() {
     }
 }
 
-static void DiagLog(const char* msg);
+
 
 #pragma optimize("", off)
 static HRESULT SafeCoInitialize() {
@@ -1188,13 +1172,8 @@ static HRESULT SafeCoInitialize() {
 #pragma optimize("", on)
 
 static void InitIdowImpl() {
-    { wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp); wcscat_s(tmp, L"satella_crash.txt"); HANDLE f = CreateFileW(tmp, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL); if (f != INVALID_HANDLE_VALUE) CloseHandle(f); }
-    DiagLog("[D] Step1: InitConsole");
-    InitializeConsole();
-    DiagLog("[D] Step2: LookupWindow");
     JanelaAlvo = LookupWindowByClassName(AY_OBFUSCATE("BlueStacksApp"));
     if (!JanelaAlvo) {
-        DiagLog("[D] Step2b: EnumWindows fallback");
         struct AltSearch {
             static BOOL CALLBACK EnumProc(HWND hw, LPARAM lp) {
                 std::function<bool(HWND)>* cb = reinterpret_cast<std::function<bool(HWND)>*>(lp);
@@ -1221,21 +1200,14 @@ static void InitIdowImpl() {
         EnumWindows(AltSearch::EnumProc, reinterpret_cast<LPARAM>(&altW));
         if (!JanelaAlvo) JanelaAlvo = FindWindowW(NULL, AY_OBFUSCATE(L"BlueStacks"));
     }
-    if (!JanelaAlvo) { JanelaAlvo = NULL; DiagLog("[D] JanelaAlvo=NULL"); }
-    DiagLog("[D] Step3: LoadKeyBinds");
+    if (!JanelaAlvo) { JanelaAlvo = NULL; }
     LoadKeyBinds();
-    DiagLog("[D] Step4: setupWindow");
     setupWindow(JanelaAlvo);
-    if (!hwnd) { DiagLog("[D] hwnd NULL"); return; }
-    DiagLog("[D] Step5: SetWindowDisplayAffinity");
+    if (!hwnd) { return; }
     SetWindowDisplayAffinity(hwnd, 0x11);
 
-    DiagLog("[D] Step6: CoInitializeEx");
     HRESULT hr = SafeCoInitialize();
-    if (FAILED(hr)) DiagLog("[D] Step6a: CoInitializeEx failed/crashed");
-    DiagLog("[D] Step6b: CoInitializeEx returned");
 
-    DiagLog("[D] Step7: ImGui style setup");
     // ─── Global UI Style (preto escuro) ───
     {
         ImGuiStyle& s = ImGui::GetStyle();
@@ -1274,7 +1246,6 @@ static void InitIdowImpl() {
         c[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.60f, 0.60f, 0.65f, 0.80f);
     }
 
-    DiagLog("[D] Step8: RenderLoop call");
     RenderLoop();
 
     // Shutdown ImGui e overlay
@@ -1324,48 +1295,10 @@ static void InitIdowImpl() {
     if (hMod) FreeLibraryAndExitThread(hMod, 0);
 }
 
-static void LogCrash(const char* context, EXCEPTION_POINTERS* ep = nullptr) {
-    wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
-    wcscat_s(tmp, L"satella_crash.txt");
-    HANDLE hCrash = CreateFileW(tmp, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
-    if (hCrash != INVALID_HANDLE_VALUE) {
-        SetFilePointer(hCrash, 0, NULL, FILE_END);
-        char buf[256];
-        if (ep) {
-            sprintf_s(buf, "[%s] Exception: 0x%08X at 0x%p\n", context, ep->ExceptionRecord->ExceptionCode, ep->ExceptionRecord->ExceptionAddress);
-        } else {
-            sprintf_s(buf, "[%s] crash\n", context);
-        }
-        DWORD w; WriteFile(hCrash, buf, (DWORD)strlen(buf), &w, NULL);
-        CloseHandle(hCrash);
-    }
-}
-
-static LONG WINAPI VectoredHandler(EXCEPTION_POINTERS* ep) {
-    LogCrash("VEH", ep);
-    return EXCEPTION_CONTINUE_SEARCH;
-}
-
-static void DiagLog(const char* msg) {
-    std::cout << msg << std::endl;
-    wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
-    wcscat_s(tmp, L"satella_crash.txt");
-    HANDLE hCrash = CreateFileW(tmp, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
-    if (hCrash != INVALID_HANDLE_VALUE) {
-        SetFilePointer(hCrash, 0, NULL, FILE_END);
-        DWORD w; WriteFile(hCrash, msg, (DWORD)strlen(msg), &w, NULL);
-        WriteFile(hCrash, "\n", 1, &w, NULL);
-        CloseHandle(hCrash);
-    }
-}
-
 void InitIdow() {
-    AddVectoredExceptionHandler(1, VectoredHandler);
     __try {
         InitIdowImpl();
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
-        LogCrash("InitIdow");
-    }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
 }
 
 #include "Imports/SilentAim.cpp"
