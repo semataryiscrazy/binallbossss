@@ -1184,6 +1184,7 @@ static HRESULT SafeCoInitialize() {
 #pragma optimize("", on)
 
 static void InitIdowImpl() {
+    LogCrash("[InitIdowImpl] entered");
     JanelaAlvo = LookupWindowByClassName(AY_OBFUSCATE("BlueStacksApp"));
     if (!JanelaAlvo) {
         struct AltSearch {
@@ -1258,6 +1259,7 @@ static void InitIdowImpl() {
         c[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.60f, 0.60f, 0.65f, 0.80f);
     }
 
+    LogCrash("[InitIdowImpl] entering RenderLoop");
     RenderLoop();
 
     // Shutdown ImGui e overlay
@@ -1310,7 +1312,7 @@ static void InitIdowImpl() {
 void InitIdow() {
     __try {
         InitIdowImpl();
-    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+    } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[InitIdow] crash in InitIdowImpl"); }
 }
 
 #include "Imports/SilentAim.cpp"
