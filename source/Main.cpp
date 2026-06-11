@@ -967,7 +967,8 @@ static DWORD SafeTick() {
     __try { return GetTickCount64(); } __except(EXCEPTION_EXECUTE_HANDLER) { return 0; }
 }
 
-static void RenderLoop() {
+__declspec(noinline) static void RenderLoop() {
+    volatile int dummy = 0;
     LogCrash("[RL] started");
     DWORD iter = 0;
     while (!g_Unload) {
