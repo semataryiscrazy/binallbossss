@@ -1110,10 +1110,6 @@ void UnloadCheat() {
     if (running) return;
     running = true;
 
-    // Libera mutex para permitir nova injeção assumir controle
-    HANDLE hMutex = OpenMutexA(MUTEX_ALL_ACCESS, FALSE, "SatellaPrivate_SingleInstance");
-    if (hMutex) { ReleaseMutex(hMutex); CloseHandle(hMutex); }
-
     if (hwnd) ShowWindow(hwnd, SW_HIDE);
     Auth.OverlayView = false;
     Auth.MenuVisible = false;
@@ -1407,23 +1403,6 @@ static void InitIdowImpl() {
 }
 
 void InitIdow() {
-    // Mutex global - garante apenas UMA instância da DLL ativa no processo
-    static HANDLE g_mutex = NULL;
-    if (!g_mutex) {
-        g_mutex = CreateMutexA(NULL, TRUE, "SatellaPrivate_SingleInstance");
-        if (GetLastError() == ERROR_ALREADY_EXISTS) {
-            // Já existe outra instância rodando - fecha a anterior sinalizando unload
-            HANDLE hOld = OpenEventA(EVENT_MODIFY_STATE, FALSE, "SatellaPrivate_Unload");
-            if (hOld) { SetEvent(hOld); CloseHandle(hOld); }
-            CloseHandle(g_mutex); g_mutex = NULL;
-            Sleep(500); // Aguarda a anterior fechar
-            // Recria o mutex para esta nova instância
-            g_mutex = CreateMutexA(NULL, TRUE, "SatellaPrivate_SingleInstance");
-        }
-    }
-    // Cria evento de unload para esta instância
-    HANDLE hUnload = CreateEventA(NULL, TRUE, FALSE, "SatellaPrivate_Unload");
-
     static std::atomic<bool> g_initDone{false};
     if (g_initDone.exchange(true)) return;
     __try {
