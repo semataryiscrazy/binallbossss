@@ -951,6 +951,16 @@ void runRenderTick() {
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
     ImGui::Begin("##ESPWindow", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus);
     DesenharESP(static_cast<int>(ImGui::GetIO().DisplaySize.x), static_cast<int>(ImGui::GetIO().DisplaySize.y));
+
+    // Indicador de overlay ativo - quadrado vermelho no centro
+    {
+        float cx = ImGui::GetIO().DisplaySize.x * 0.5f;
+        float cy = ImGui::GetIO().DisplaySize.y * 0.5f;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(ImVec2(cx - 20, cy - 20), ImVec2(cx + 20, cy + 20), IM_COL32(255, 0, 0, 200));
+        dl->AddRect(ImVec2(cx - 20, cy - 20), ImVec2(cx + 20, cy + 20), IM_COL32(255, 255, 255, 255), 0, 0, 2.0f);
+    }
+
     ImGui::End();
 
     ImGui::EndFrame(); ImGui::Render();
