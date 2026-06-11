@@ -1403,8 +1403,16 @@ static void InitIdowImpl() {
 }
 
 void InitIdow() {
-    static std::atomic<bool> g_initDone{false};
-    if (g_initDone.exchange(true)) return;
+    // Named mutex global do Windows - persiste entre injeções no mesmo processo
+    HANDLE hMutex = CreateMutexA(NULL, FALSE, "Global\\SatellaInit_v2");
+    if (!hMutex) return;
+    DWORD wait = WaitForSingleObject(hMutex, 0); // Tenta adquirir sem bloquear
+    if (wait != WAIT_OBJECT_0) {
+        // Outra instância já está rodando neste processo
+        CloseHandle(hMutex);
+        return;
+    }
+    // Mutex adquirido - esta é a única instância
     __try {
         InitIdowImpl();
     } __except(EXCEPTION_EXECUTE_HANDLER) {
