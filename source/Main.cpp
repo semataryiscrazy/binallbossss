@@ -900,15 +900,6 @@ static LRESULT CALLBACK BSWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
 }
 
 static void D3DRenderFrame() {
-    if (!g_d3dReady) {
-        ID3D11Device* d = nullptr; ID3D11DeviceContext* c = nullptr;
-        IDXGISwapChain* sc = nullptr;
-        if (SUCCEEDED(D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, NULL, 0, D3D11_SDK_VERSION, &d, NULL, &c))) {
-            // Use the real swap chain from the hook parameter - but we don't have it here.
-            // g_d3dReady will be set when ImGui_ImplDX11_Init succeeds.
-        }
-        if (d) d->Release(); if (c) c->Release();
-    }
     ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
 
     // ─── Particles ───
@@ -1224,7 +1215,16 @@ static void D3DPresentHook_Init(IDXGISwapChain* sc) {
     ID3D11Device* d = nullptr; ID3D11DeviceContext* c = nullptr;
     if (SUCCEEDED(sc->GetDevice(IID_PPV_ARGS(&d))) && d) {
         d->GetImmediateContext(&c);
-        if (c) { ImGui_ImplDX11_Init(d, c); g_d3dReady = true; }
+    } else {
+        // Fallback: create device from scratch (won't share resources but renders)
+        D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, NULL, 0, D3D11_SDK_VERSION, &d, NULL, &c);
+    }
+    if (d && c) {
+        LogCrash("[D3D] Init DX11 OK");
+        ImGui_ImplDX11_Init(d, c);
+        g_d3dReady = true;
+    } else {
+        LogCrash("[D3D] Init DX11 FAILED");
     }
     if (d) d->Release(); if (c) c->Release();
 }
@@ -1249,7 +1249,10 @@ static bool HookD3D11Present(HWND targetWnd) {
     if (FAILED(hr)) hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &sd, &sc, &dev, nullptr, &ctx);
     if (FAILED(hr) || !sc) return false;
     void** vt = *(void***)sc; g_origPresent = (PresentFn)vt[8];
-    MH_Initialize(); MH_CreateHook(g_origPresent, PresentHook, (void**)&g_origPresent); MH_EnableHook(g_origPresent);
+    PresentFn origAddr = g_origPresent;
+    MH_Initialize();
+    MH_CreateHook(g_origPresent, PresentHook, (void**)&g_origPresent);
+    MH_EnableHook(origAddr);
     if (sc) sc->Release(); if (dev) dev->Release(); if (ctx) ctx->Release();
     // Subclass target window for input
     if (targetWnd) g_origWndProc = (WNDPROC)SetWindowLongPtr(targetWnd, GWLP_WNDPROC, (LONG_PTR)BSWndProc);
