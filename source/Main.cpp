@@ -163,6 +163,9 @@ static void AplicarPatchesAOB() {
 
 // --- ESP -----------------------------------------------------
 
+static DWORD SafeTick();
+static void LogCrash(const char* context);
+
 void DesenharESP(int width, int height) {
     espOffsetX = 0; espOffsetY = 0;
     SWidth = width; SHeight = height;
@@ -358,8 +361,8 @@ void DesenharESP(int width, int height) {
     }
     if (Watermark) {
         char wmBuf[128];
-        static DWORD wmStart = GetTickCount64();
-        DWORD wmNow = GetTickCount64();
+        static DWORD wmStart = SafeTick();
+        DWORD wmNow = SafeTick();
         DWORD wmSec = (wmNow - wmStart) / 1000;
         int wmH = (int)(wmSec / 3600);
         int wmM = ((int)wmSec % 3600) / 60;
@@ -420,8 +423,8 @@ void runRenderTick() {
     // ─── Partículas (original) ───
     struct Particle { float x, y, speed, size; };
     static std::vector<Particle> particles;
-    static DWORD lastPartTick2 = GetTickCount64();
-    DWORD nowP = GetTickCount64();
+    static DWORD lastPartTick2 = SafeTick();
+    DWORD nowP = SafeTick();
     float dt = (nowP - lastPartTick2) / 1000.0f; lastPartTick2 = nowP;
     if (!PerformanceMode && particles.empty()) {
         for (int i = 0; i < 40; i++) particles.push_back({static_cast<float>(rand() % 2000) / 2000.0f * 640, static_cast<float>(rand() % 2000) / 2000.0f * 460, 15 + static_cast<float>(rand() % 500) / 100, 0.5f + static_cast<float>(rand() % 100) / 200.0f});
@@ -945,20 +948,29 @@ static void deep_clean_internal() {
 
 
 
+static void LogCrash(const char* context) {
+    __try {
+        wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
+        wcscat_s(tmp, L"satella_crash.txt");
+        HANDLE h = CreateFileW(tmp, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
+        if (h != INVALID_HANDLE_VALUE) {
+            SetFilePointer(h, 0, NULL, FILE_END);
+            DWORD w;
+            WriteFile(h, context, (DWORD)strlen(context), &w, NULL);
+            WriteFile(h, "\n", 1, &w, NULL);
+            CloseHandle(h);
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+}
+
+static DWORD SafeTick() {
+    __try { return GetTickCount64(); } __except(EXCEPTION_EXECUTE_HANDLER) { return 0; }
+}
+
 static void RenderLoop() {
-    DWORD lastTick = 0;
-    bool first = true;
     while (!g_Unload) {
-        __try {
-            if (first) { lastTick = GetTickCount64(); first = false; }
-            handleKeyPresses();
-            auto now = GetTickCount64();
-            long long frameMs = PerformanceMode ? 33 : 16;
-            if (now - lastTick >= frameMs) {
-                lastTick = now;
-                runRenderTick();
-            }
-        } __except(EXCEPTION_EXECUTE_HANDLER) {}
+        __try { handleKeyPresses(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[RL] handleKeyPresses crash"); }
+        __try { runRenderTick(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[RL] runRenderTick crash"); }
         Sleep(PerformanceMode ? 5 : 1);
     }
 }
