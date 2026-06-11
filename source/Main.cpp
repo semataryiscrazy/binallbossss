@@ -419,7 +419,10 @@ static ID3D11Device* g_d3dDev = nullptr;
 static ID3D11DeviceContext* g_d3dCtx = nullptr;
 
 void runRenderTick() {
-    // F6 / F7 even when D3D is active (no ImGui involvement)
+    eventPoll();
+    ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
+
+    // ─── Stream Mode (F6) ───
     if (GetAsyncKeyState(VK_F6) & 1) {
         StreamMode = !StreamMode;
         if (!g_d3dReady) {
@@ -430,9 +433,8 @@ void runRenderTick() {
             }
         }
     }
+    // F7 = Unload completo
     if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
-
-    // ─── Window tracking (no ImGui) ───
     {
         RECT wr = {0};
         if (!IsWindow(hTargetWindow) || !GetWindowRect(hTargetWindow, &wr)) {
@@ -440,17 +442,15 @@ void runRenderTick() {
             if (!hTargetWindow) return;
             if (!GetWindowRect(hTargetWindow, &wr)) return;
         }
+
         int cw = wr.right - wr.left, ch = wr.bottom - wr.top;
-        if (cw <= 0 || cw > 8192 || ch <= 0 || ch > 8192 || IsIconic(hTargetWindow)) return;
+        if (cw <= 0 || ch <= 0 || IsIconic(hTargetWindow)) return;
         SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch,
             SWP_NOACTIVATE | SWP_NOCOPYBITS);
-    }
 
-    eventPoll();
-    ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
-
-    if (!g_d3dReady) {
-        if (!SafeNewFrame()) return;
+        if (!g_d3dReady) {
+            if (!SafeNewFrame()) return;
+        }
     }
 
     if (!g_d3dReady) {
