@@ -417,7 +417,6 @@ static WNDPROC g_origWndProc = nullptr;
 static IDXGISwapChain* g_hookedSC = nullptr;
 static ID3D11Device* g_d3dDev = nullptr;
 static ID3D11DeviceContext* g_d3dCtx = nullptr;
-static bool g_d3dHookInstalled = false;
 
 void runRenderTick() {
     // F6 / F7 even when D3D is active (no ImGui involvement)
@@ -448,11 +447,6 @@ void runRenderTick() {
     }
 
     eventPoll();
-
-    // If D3D hook is installed, do NOT touch ImGui from this thread
-    // (the D3D Present thread manages all ImGui rendering)
-    if (g_d3dHookInstalled) return;
-
     ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
 
     if (!g_d3dReady) {
@@ -1787,7 +1781,6 @@ static void InitIdowImpl() {
         HRESULT hr = SafeCoInitialize();
         if (HookD3D11Present(JanelaAlvo)) {
             LogCrash("[Init] D3D hook installed, GDI overlay will be invisible");
-            g_d3dHookInstalled = true;
         } else {
             LogCrash("[Init] D3D hook failed, using GDI overlay");
         }
