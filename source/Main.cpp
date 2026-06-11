@@ -402,6 +402,8 @@ void runRenderTick() {
         if (cw > 0 && ch > 0 && !IsIconic(hTargetWindow)) {
             SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch,
                 SWP_NOACTIVATE | SWP_NOCOPYBITS);
+            // Garante que a janela está visível e no topo
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE);
         }
     }
 
@@ -452,6 +454,8 @@ void runRenderTick() {
     if ((GetAsyncKeyState(VK_F8) & 1) || (GetAsyncKeyState(VK_INSERT) & 1)) {
         Auth.MenuVisible = !Auth.MenuVisible;
         Auth.OverlayView = true;
+        // Força sempre por cima do emulador
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         if (Auth.MenuVisible) {
             SetForegroundWindow(hwnd);
         } else {
