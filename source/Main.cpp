@@ -5,7 +5,6 @@
 #include "Imports/includes.h"
 #include "Main.h"
 #include "Imports/EntityCache.cpp"
-#include <chrono>
 #include <unordered_map>
 #include <shlobj.h>
 #include "../keyauth/ka_bridge.h"
@@ -359,9 +358,9 @@ void DesenharESP(int width, int height) {
     }
     if (Watermark) {
         char wmBuf[128];
-        auto nowWM = std::chrono::steady_clock::now();
-        static auto wmStart = nowWM;
-        float wmSec = std::chrono::duration<float>(nowWM - wmStart).count();
+        static DWORD wmStart = GetTickCount64();
+        DWORD wmNow = GetTickCount64();
+        DWORD wmSec = (wmNow - wmStart) / 1000;
         int wmH = (int)(wmSec / 3600);
         int wmM = ((int)wmSec % 3600) / 60;
         int wmS = (int)wmSec % 60;
@@ -377,6 +376,8 @@ extern HWND hwnd;
 static void StopKellerETW();
 static void ClearPEBDebugFlags();
 static void DiagLog(const char* msg);
+
+static void SafeRenderGDI();
 
 void runRenderTick() {
     eventPoll();
@@ -421,9 +422,9 @@ void runRenderTick() {
     // ─── Partículas (original) ───
     struct Particle { float x, y, speed, size; };
     static std::vector<Particle> particles;
-    static auto lastPartTick2 = std::chrono::steady_clock::now();
-    auto nowP = std::chrono::steady_clock::now();
-    float dt = std::chrono::duration<float>(nowP - lastPartTick2).count(); lastPartTick2 = nowP;
+    static DWORD lastPartTick2 = GetTickCount64();
+    DWORD nowP = GetTickCount64();
+    float dt = (nowP - lastPartTick2) / 1000.0f; lastPartTick2 = nowP;
     if (!PerformanceMode && particles.empty()) {
         for (int i = 0; i < 40; i++) particles.push_back({static_cast<float>(rand() % 2000) / 2000.0f * 640, static_cast<float>(rand() % 2000) / 2000.0f * 460, 15 + static_cast<float>(rand() % 500) / 100, 0.5f + static_cast<float>(rand() % 100) / 200.0f});
     }
@@ -472,7 +473,6 @@ void runRenderTick() {
             const float inputW = winW - padX * 2;
             const float btnH = 38;
 
-            JUNK(); AntiDebugCheck();
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 10));
             ImGui::SetNextWindowSize(ImVec2(winW, winH));
             ImGui::Begin(AY_OBFUSCATE("Satella"), nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollWithMouse);
@@ -884,13 +884,15 @@ void runRenderTick() {
     ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
     ImGui::Begin("##ESPWindow", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus);
-    if (Auth.Attached) std::cout << "[Render] DesenharESP start, cachedLP=" << std::hex << cachedLocalPlayer << std::endl;
     DesenharESP(static_cast<int>(ImGui::GetIO().DisplaySize.x), static_cast<int>(ImGui::GetIO().DisplaySize.y));
-    if (Auth.Attached) std::cout << "[Render] DesenharESP end" << std::endl;
     ImGui::End();
 
     ImGui::EndFrame(); ImGui::Render();
-    ImGui_ImplGDI_RenderDrawData(ImGui::GetDrawData(), hwnd);
+    SafeRenderGDI();
+}
+
+static void SafeRenderGDI() {
+    __try { ImGui_ImplGDI_RenderDrawData(ImGui::GetDrawData(), hwnd); } __except(EXCEPTION_EXECUTE_HANDLER) {}
 }
 
 void InitializeConsole() {
