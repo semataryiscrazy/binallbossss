@@ -1262,6 +1262,8 @@ static void D3DPresentHook_Init(IDXGISwapChain* sc) {
         ImGui_ImplDX11_Init(d, c);
         g_hookedSC = sc;
         if (g_hookedSC) g_hookedSC->AddRef();
+        // Hide GDI overlay window so BlueStacks window receives all input directly
+        if (hwnd) ShowWindow(hwnd, SW_HIDE);
         g_d3dReady = true;
     } else {
         LogCrash("[D3D] Init DX11 FAILED");
