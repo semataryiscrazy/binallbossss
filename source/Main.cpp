@@ -400,6 +400,9 @@ extern HWND hwnd;
 static void StopKellerETW();
 static void ClearPEBDebugFlags();
 static void SafeRenderGDI();
+static bool SafeNewFrame() {
+    __try { ImGui_ImplWin32_NewFrame(); ImGui::NewFrame(); return true; } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[M1] NewFrame crash"); return false; }
+}
 
 void runRenderTick() {
     eventPoll();
@@ -417,7 +420,7 @@ void runRenderTick() {
     SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch,
         SWP_NOACTIVATE | SWP_NOCOPYBITS);
 
-    ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
+    if (!SafeNewFrame()) return;
 
     // ─── Stream Mode (F6) ───
     if (GetAsyncKeyState(VK_F6) & 1) {
@@ -876,7 +879,7 @@ void runRenderTick() {
 }
 
 static void SafeRenderGDI() {
-    __try { ImGui_ImplGDI_RenderDrawData(ImGui::GetDrawData(), hwnd); } __except(EXCEPTION_EXECUTE_HANDLER) {}
+    __try { ImGui_ImplGDI_RenderDrawData(ImGui::GetDrawData(), hwnd); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[M4] SafeRenderGDI crash"); }
 }
 
 
@@ -933,6 +936,20 @@ static void deep_clean_internal() {
 
 static void LogCrash(const char* context) {
     __try {
+        // Rate limit: max 1 write per 2 seconds per unique message
+        static DWORD lastLogTick[64] = {};
+        static const char* lastLogMsg[64] = {};
+        static int logSlot = 0;
+        DWORD now = GetTickCount();
+        bool skip = false;
+        for (int i = 0; i < 64; i++) {
+            if (lastLogMsg[i] == context && (now - lastLogTick[i]) < 2000) { skip = true; break; }
+        }
+        if (skip) return;
+        lastLogMsg[logSlot % 64] = context;
+        lastLogTick[logSlot % 64] = now;
+        logSlot++;
+
         wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH, tmp);
         wcscat_s(tmp, L"satella_crash.txt");
         HANDLE h = CreateFileW(tmp, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
@@ -954,6 +971,7 @@ __declspec(noinline) static void RenderLoop() {
     volatile int dummy = 0;
     LogCrash("[RL] started");
     DWORD iter = 0;
+    int renderCrashCount = 0;
     while (!g_Unload) {
         iter++;
         if (iter % 60 == 0) {
@@ -981,7 +999,12 @@ __declspec(noinline) static void RenderLoop() {
             }
         }
         __try { handleKeyPresses(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[RL] handleKeyPresses crash"); }
-        __try { runRenderTick(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[RL] runRenderTick crash"); }
+        if (renderCrashCount >= 5) {
+            Sleep(3000);
+            renderCrashCount = 0;
+            continue;
+        }
+        __try { runRenderTick(); renderCrashCount = 0; } __except(EXCEPTION_EXECUTE_HANDLER) { renderCrashCount++; LogCrash("[RL] runRenderTick crash"); }
         Sleep(PerformanceMode ? 5 : 1);
     }
 }
