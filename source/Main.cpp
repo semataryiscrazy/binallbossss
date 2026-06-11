@@ -409,14 +409,11 @@ static bool SafeRenderESP(int w, int h) {
     __try { DesenharESP(w, h); return true; } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[M3] ESP crash"); return false; }
 }
 
-// D3D Present Hook globals
+// D3D Present Hook globals (declared early for runRenderTick)
 typedef HRESULT(WINAPI* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent = nullptr;
 static bool g_d3dReady = false;
 static WNDPROC g_origWndProc = nullptr;
-static IDXGISwapChain* g_hookedSC = nullptr;
-static ID3D11Device* g_d3dDev = nullptr;
-static ID3D11DeviceContext* g_d3dCtx = nullptr;
 
 void runRenderTick() {
     eventPoll();
@@ -425,12 +422,10 @@ void runRenderTick() {
     // ─── Stream Mode (F6) ───
     if (GetAsyncKeyState(VK_F6) & 1) {
         StreamMode = !StreamMode;
-        if (!g_d3dReady) {
-            if (StreamMode) {
-                SetWindowDisplayAffinity(hwnd, 0x11);
-            } else {
-                SetWindowDisplayAffinity(hwnd, 0);
-            }
+        if (StreamMode) {
+            SetWindowDisplayAffinity(hwnd, 0x11);
+        } else {
+            SetWindowDisplayAffinity(hwnd, 0);
         }
     }
     // F7 = Unload completo
@@ -445,25 +440,48 @@ void runRenderTick() {
             SetForegroundWindow(hTargetWindow);
         }
     }
-    {
+
+    bool frameOk = false;
+    if (!g_d3dReady) {
         RECT wr = {0};
-        if (!IsWindow(hTargetWindow) || !GetWindowRect(hTargetWindow, &wr)) {
+        bool winOk = IsWindow(hTargetWindow) && GetWindowRect(hTargetWindow, &wr);
+        if (!winOk) {
             hTargetWindow = FindRenderWindow(NULL);
-            if (!hTargetWindow) return;
-            if (!GetWindowRect(hTargetWindow, &wr)) return;
+            if (hTargetWindow) GetWindowRect(hTargetWindow, &wr);
         }
 
         int cw = wr.right - wr.left, ch = wr.bottom - wr.top;
-        if (cw <= 0 || ch <= 0 || IsIconic(hTargetWindow)) return;
-        SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch,
-            SWP_NOACTIVATE | SWP_NOCOPYBITS);
+        if (cw > 0 && ch > 0 && !IsIconic(hTargetWindow)) {
+            SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch,
+                SWP_NOACTIVATE | SWP_NOCOPYBITS);
+        }
 
-        if (!g_d3dReady) {
-            if (!SafeNewFrame()) return;
+        frameOk = SafeNewFrame();
+    }
+
+    // ─── Stream Mode (F6) ───
+    if (GetAsyncKeyState(VK_F6) & 1) {
+        StreamMode = !StreamMode;
+        if (StreamMode) {
+            SetWindowDisplayAffinity(hwnd, 0x11);
+        } else {
+            SetWindowDisplayAffinity(hwnd, 0);
+        }
+    }
+    // F7 = Unload completo
+    if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
+    // F8 = Mostra/oculta overlay
+    if ((GetAsyncKeyState(VK_F8) & 1)) {
+        Auth.MenuVisible = !Auth.MenuVisible;
+        Auth.OverlayView = true;
+        if (Auth.MenuVisible) {
+            SetForegroundWindow(hwnd);
+        } else {
+            SetForegroundWindow(hTargetWindow);
         }
     }
 
-    if (!g_d3dReady) {
+    if (!g_d3dReady && frameOk) {
     // ─── Partículas (original) ───
     struct Particle { float x, y, speed, size; };
     static std::vector<Particle> particles;
@@ -888,7 +906,7 @@ void runRenderTick() {
     }
 
     // -- AimLock (target tracking) --
-    if (!g_d3dReady) {
+    if (!g_d3dReady && frameOk) {
     ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
     ImGui::Begin("##ESPWindow", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus);
@@ -907,31 +925,13 @@ static void SafeRenderGDI() {
 // ─── D3D11 Present Hook (for BlueStacks in-process overlay) ───
 
 static LRESULT CALLBACK BSWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    // ImGui handler protected: if it crashes, original WndProc still runs
-    __try {
-        if (Auth.MenuVisible && ImGui::GetCurrentContext())
-            ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam);
-    } __except(EXCEPTION_EXECUTE_HANDLER) {}
-    // Always call the original WndProc for BlueStacks to process the message
-    if (hWnd == JanelaAlvo && g_origWndProc)
-        return CallWindowProc(g_origWndProc, hWnd, msg, wParam, lParam);
-    return DefWindowProc(hWnd, msg, wParam, lParam);
+    if (Auth.MenuVisible && ImGui::GetCurrentContext())
+        ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam);
+    return CallWindowProc(g_origWndProc, hWnd, msg, wParam, lParam);
 }
 
 static void D3DRenderFrame() {
-    ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame();
-    // Override DisplaySize with actual swap chain buffer size after Win32 NewFrame
-    if (g_hookedSC) {
-        DXGI_SWAP_CHAIN_DESC scd;
-        if (SUCCEEDED(g_hookedSC->GetDesc(&scd))) {
-            ImGuiIO& io = ImGui::GetIO();
-            io.DisplaySize = ImVec2((float)scd.BufferDesc.Width, (float)scd.BufferDesc.Height);
-        }
-    }
-    ImGui::NewFrame();
-
-    // F8 = Mostra/oculta overlay
-    if ((GetAsyncKeyState(VK_F8) & 1)) { Auth.MenuVisible = !Auth.MenuVisible; Auth.OverlayView = true; }
+    ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
 
     // ─── Particles ───
     struct Particle { float x, y, speed, size; };
@@ -941,6 +941,13 @@ static void D3DRenderFrame() {
     if (!PerformanceMode && particles.empty()) {
         for (int i = 0; i < 40; i++) particles.push_back({static_cast<float>(rand() % 2000) / 2000.0f * 640, static_cast<float>(rand() % 2000) / 2000.0f * 460, 15 + static_cast<float>(rand() % 500) / 100, 0.5f + static_cast<float>(rand() % 100) / 200.0f});
     }
+
+    // ─── Stream Mode (F6) ───
+    if (GetAsyncKeyState(VK_F6) & 1) { StreamMode = !StreamMode; }
+    // F7 = Unload completo
+    if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
+    // F8 = Mostra/oculta overlay
+    if ((GetAsyncKeyState(VK_F8) & 1)) { Auth.MenuVisible = !Auth.MenuVisible; Auth.OverlayView = true; }
 
     if (Auth.MenuVisible) {
         static float AnimaTab = 0, Anima = 0; static int LastCurrentTab = 0, LastCurrentSub = 0, CurrentSub = 0;
@@ -1232,20 +1239,7 @@ static void D3DRenderFrame() {
     ImGui::End();
 
     ImGui::EndFrame(); ImGui::Render();
-
-    // Set render target to swap chain back buffer before ImGui draw
-    ID3D11RenderTargetView* rtv = nullptr;
-    ID3D11Texture2D* bb = nullptr;
-    if (g_hookedSC && g_d3dDev && g_d3dCtx &&
-        SUCCEEDED(g_hookedSC->GetBuffer(0, IID_PPV_ARGS(&bb))) && bb) {
-        g_d3dDev->CreateRenderTargetView(bb, nullptr, &rtv);
-        bb->Release();
-        if (rtv) {
-            g_d3dCtx->OMSetRenderTargets(1, &rtv, nullptr);
-        }
-    }
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-    if (rtv) rtv->Release();
 }
 
 static void D3DPresentHook_Init(IDXGISwapChain* sc) {
@@ -1257,29 +1251,8 @@ static void D3DPresentHook_Init(IDXGISwapChain* sc) {
         D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, NULL, 0, D3D11_SDK_VERSION, &d, NULL, &c);
     }
     if (d && c) {
-        // Keep references for RTV setup
-        g_d3dDev = d; g_d3dCtx = c;
-        g_d3dDev->AddRef(); g_d3dCtx->AddRef();
         LogCrash("[D3D] Init DX11 OK");
         ImGui_ImplDX11_Init(d, c);
-        g_hookedSC = sc;
-        if (g_hookedSC) g_hookedSC->AddRef();
-        // Get swap chain output window for input coordinate mapping
-        DXGI_SWAP_CHAIN_DESC scd = {};
-        HWND outputWnd = NULL;
-        if (SUCCEEDED(sc->GetDesc(&scd)) && scd.OutputWindow) {
-            outputWnd = scd.OutputWindow;
-        }
-        if (outputWnd) {
-            // Re-init Win32 backend with the real output window for correct input coords
-            ImGui_ImplWin32_Shutdown();
-            ImGui_ImplWin32_Init(outputWnd);
-        } else if (JanelaAlvo) {
-            ImGui_ImplWin32_Shutdown();
-            ImGui_ImplWin32_Init(JanelaAlvo);
-        }
-        // Hide GDI overlay window so it doesn't block D3D
-        if (hwnd) ShowWindow(hwnd, SW_HIDE);
         g_d3dReady = true;
     } else {
         LogCrash("[D3D] Init DX11 FAILED");
@@ -1292,12 +1265,7 @@ static HRESULT WINAPI PresentHook(IDXGISwapChain* sc, UINT si, UINT f) {
         if (!g_d3dReady) D3DPresentHook_Init(sc);
         if (g_d3dReady) D3DRenderFrame();
     } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[D3D] PresentHook crash"); }
-    __try {
-        return g_origPresent(sc, si, f);
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
-        LogCrash("[D3D] g_origPresent crash");
-        return E_FAIL;
-    }
+    return g_origPresent(sc, si, f);
 }
 
 static bool HookD3D11Present(HWND targetWnd) {
@@ -1317,7 +1285,7 @@ static bool HookD3D11Present(HWND targetWnd) {
     MH_CreateHook(g_origPresent, PresentHook, (void**)&g_origPresent);
     MH_EnableHook(origAddr);
     if (sc) sc->Release(); if (dev) dev->Release(); if (ctx) ctx->Release();
-    // Subclass target window for input (protected by __try/__except in BSWndProc)
+    // Subclass target window for input
     if (targetWnd) g_origWndProc = (WNDPROC)SetWindowLongPtr(targetWnd, GWLP_WNDPROC, (LONG_PTR)BSWndProc);
     LogCrash("[D3D] Hook installed");
     return true;
@@ -1434,7 +1402,7 @@ __declspec(noinline) static void RenderLoop() {
                 twOK ? (tr.right-tr.left) : 0, twOK ? (tr.bottom-tr.top) : 0);
             LogCrash(buf);
             // Every 180 iterations, try to force overlay to front
-            if (iter % 180 == 0 && hwOK && !g_d3dReady) {
+            if (iter % 180 == 0 && hwOK) {
                 SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
                 BringWindowToTop(hwnd);
             }
@@ -1800,15 +1768,13 @@ static void InitIdowImpl() {
     }
     RenderLoop();
 
+cleanup_d3d:
     // Shutdown ImGui e overlay
     ImGui_ImplWin32_Shutdown(); ImGui_ImplDX11_Shutdown(); ImGui::DestroyContext();
     if (g_origPresent) {
         MH_DisableHook(g_origPresent); MH_RemoveHook(g_origPresent);
     }
     delete[] g_Buffer; g_Buffer = nullptr; g_BufferWidth = g_BufferHeight = 0;
-    if (g_hookedSC) { g_hookedSC->Release(); g_hookedSC = nullptr; }
-    if (g_d3dDev) { g_d3dDev->Release(); g_d3dDev = nullptr; }
-    if (g_d3dCtx) { g_d3dCtx->Release(); g_d3dCtx = nullptr; }
     if (hwnd) {
         ::DestroyWindow(hwnd);
     }
