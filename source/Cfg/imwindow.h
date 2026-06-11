@@ -21068,10 +21068,9 @@ inline void setupWindow(HWND foundWindow = NULL) {
     if (!RegisterClassExA(&wc)) printf("[Satella] RegisterClassEx falhou: %d\n", GetLastError());
     else printf("[Satella] RegisterClassEx OK\n");
 
-    // Cria como POPUP top-level com WS_EX_LAYERED + HWND_TOPMOST (sem SetParent)
-    // Click-through é controlado via WM_NCHITTEST no WndProc
+    // Cria como POPUP top-level com WS_EX_LAYERED (sem SetWindowDisplayAffinity)
     hwnd = CreateWindowExA(
-        WS_EX_LAYERED | WS_EX_TOOLWINDOW,
+        WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
         wc.lpszClassName,
         "SatellaOverlay",
         WS_POPUP,
@@ -21085,14 +21084,17 @@ inline void setupWindow(HWND foundWindow = NULL) {
     );
     printf("[Satella] CreateWindowEx = %p (err=%d)\n", hwnd, GetLastError());
     if (hwnd) {
-        // NÃ£o ativa WDA_EXCLUDEFROMCAPTURE aqui - controlado pelo Stream Mode checkbox/F6
-        // Coloca no topo e reposiciona sobre o emulador
+        // Torna filha da janela alvo para renderizar sobre o D3D surface
+        if (hTargetWindow) {
+            SetParent(hwnd, hTargetWindow);
+            SetWindowLong(hwnd, GWL_STYLE, GetWindowLong(hwnd, GWL_STYLE) & ~WS_POPUP);
+        }
+        // Coloca no topo (HWND_TOP = topo dos filhos da target)
         SetWindowPos(hwnd, HWND_TOPMOST,
-            wTargetWindowRect.left, wTargetWindowRect.top,
+            0, 0,
             wTargetWindowRect.Width(), wTargetWindowRect.Height(),
             SWP_NOACTIVATE);
-        printf("[Satella] SetWindowPos TOPMOST, pos=(%d,%d) size=(%dx%d)\n",
-            wTargetWindowRect.left, wTargetWindowRect.top,
+        printf("[Satella] SetWindowPos TOPMOST, size=(%dx%d)\n",
             wTargetWindowRect.Width(), wTargetWindowRect.Height());
     }
 

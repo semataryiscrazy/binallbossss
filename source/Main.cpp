@@ -1277,7 +1277,6 @@ static void InitIdowImpl() {
     LoadKeyBinds();
     setupWindow(JanelaAlvo);
     if (!hwnd) { return; }
-    SetWindowDisplayAffinity(hwnd, 0x11);
 
     HRESULT hr = SafeCoInitialize();
 
@@ -1326,7 +1325,6 @@ static void InitIdowImpl() {
     ImGui_ImplWin32_Shutdown(); ImGui::DestroyContext();
     delete[] g_Buffer; g_Buffer = nullptr; g_BufferWidth = g_BufferHeight = 0;
     if (hwnd) {
-        SetWindowDisplayAffinity(hwnd, 0);
         ::DestroyWindow(hwnd);
     }
     ::UnregisterClassA(wc.lpszClassName, wc.hInstance);
