@@ -412,7 +412,7 @@ static bool SafeRenderESP(int w, int h) {
 // D3D Present Hook globals (declared early for runRenderTick)
 typedef HRESULT(WINAPI* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent = nullptr;
-static bool g_d3dReady = false;
+bool g_d3dReady = false;
 static WNDPROC g_origWndProc = nullptr;
 static IDXGISwapChain* g_hookedSC = nullptr;
 
@@ -423,22 +423,26 @@ void runRenderTick() {
     // ─── Stream Mode (F6) ───
     if (GetAsyncKeyState(VK_F6) & 1) {
         StreamMode = !StreamMode;
-        if (StreamMode) {
-            SetWindowDisplayAffinity(hwnd, 0x11);
-        } else {
-            SetWindowDisplayAffinity(hwnd, 0);
+        if (!g_d3dReady) {
+            if (StreamMode) {
+                SetWindowDisplayAffinity(hwnd, 0x11);
+            } else {
+                SetWindowDisplayAffinity(hwnd, 0);
+            }
         }
     }
     // F7 = Unload completo
     if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
-    // F8 = Mostra/oculta overlay
+    // F8 = Mostra/oculta overlay (kept for legacy — KeysBind.Menu in handleKeyPresses is the primary)
     if ((GetAsyncKeyState(VK_F8) & 1)) {
         Auth.MenuVisible = !Auth.MenuVisible;
         Auth.OverlayView = true;
-        if (Auth.MenuVisible) {
-            SetForegroundWindow(hwnd);
-        } else {
-            SetForegroundWindow(hTargetWindow);
+        if (!g_d3dReady) {
+            if (Auth.MenuVisible) {
+                SetForegroundWindow(hwnd);
+            } else {
+                SetForegroundWindow(hTargetWindow);
+            }
         }
     }
 
@@ -456,28 +460,6 @@ void runRenderTick() {
             SWP_NOACTIVATE | SWP_NOCOPYBITS);
 
         if (!SafeNewFrame()) return;
-    }
-
-    // ─── Stream Mode (F6) ───
-    if (GetAsyncKeyState(VK_F6) & 1) {
-        StreamMode = !StreamMode;
-        if (StreamMode) {
-            SetWindowDisplayAffinity(hwnd, 0x11);
-        } else {
-            SetWindowDisplayAffinity(hwnd, 0);
-        }
-    }
-    // F7 = Unload completo
-    if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
-    // F8 = Mostra/oculta overlay
-    if ((GetAsyncKeyState(VK_F8) & 1)) {
-        Auth.MenuVisible = !Auth.MenuVisible;
-        Auth.OverlayView = true;
-        if (Auth.MenuVisible) {
-            SetForegroundWindow(hwnd);
-        } else {
-            SetForegroundWindow(hTargetWindow);
-        }
     }
 
     if (!g_d3dReady) {
@@ -930,7 +912,8 @@ static LRESULT CALLBACK BSWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPa
 }
 
 static void D3DRenderFrame() {
-    // Set DisplaySize from hooked swap chain (ImGui_ImplDX11_NewFrame doesn't do this)
+    ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame();
+    // Override DisplaySize with actual swap chain buffer size after Win32 NewFrame
     if (g_hookedSC) {
         DXGI_SWAP_CHAIN_DESC scd;
         if (SUCCEEDED(g_hookedSC->GetDesc(&scd))) {
@@ -938,7 +921,7 @@ static void D3DRenderFrame() {
             io.DisplaySize = ImVec2((float)scd.BufferDesc.Width, (float)scd.BufferDesc.Height);
         }
     }
-    ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
+    ImGui::NewFrame();
 
     // ─── Particles ───
     struct Particle { float x, y, speed, size; };
@@ -948,13 +931,6 @@ static void D3DRenderFrame() {
     if (!PerformanceMode && particles.empty()) {
         for (int i = 0; i < 40; i++) particles.push_back({static_cast<float>(rand() % 2000) / 2000.0f * 640, static_cast<float>(rand() % 2000) / 2000.0f * 460, 15 + static_cast<float>(rand() % 500) / 100, 0.5f + static_cast<float>(rand() % 100) / 200.0f});
     }
-
-    // ─── Stream Mode (F6) ───
-    if (GetAsyncKeyState(VK_F6) & 1) { StreamMode = !StreamMode; }
-    // F7 = Unload completo
-    if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
-    // F8 = Mostra/oculta overlay
-    if ((GetAsyncKeyState(VK_F8) & 1)) { Auth.MenuVisible = !Auth.MenuVisible; Auth.OverlayView = true; }
 
     if (Auth.MenuVisible) {
         static float AnimaTab = 0, Anima = 0; static int LastCurrentTab = 0, LastCurrentSub = 0, CurrentSub = 0;
@@ -1262,7 +1238,12 @@ static void D3DPresentHook_Init(IDXGISwapChain* sc) {
         ImGui_ImplDX11_Init(d, c);
         g_hookedSC = sc;
         if (g_hookedSC) g_hookedSC->AddRef();
-        // Hide GDI overlay window so BlueStacks window receives all input directly
+        // Re-init Win32 backend with BlueStacks window for correct input coordinates
+        if (JanelaAlvo) {
+            ImGui_ImplWin32_Shutdown();
+            ImGui_ImplWin32_Init(JanelaAlvo);
+        }
+        // Hide GDI overlay window so it doesn't block D3D or steal input
         if (hwnd) ShowWindow(hwnd, SW_HIDE);
         g_d3dReady = true;
     } else {
@@ -1413,7 +1394,7 @@ __declspec(noinline) static void RenderLoop() {
                 twOK ? (tr.right-tr.left) : 0, twOK ? (tr.bottom-tr.top) : 0);
             LogCrash(buf);
             // Every 180 iterations, try to force overlay to front
-            if (iter % 180 == 0 && hwOK) {
+            if (iter % 180 == 0 && hwOK && !g_d3dReady) {
                 SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
                 BringWindowToTop(hwnd);
             }

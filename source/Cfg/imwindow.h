@@ -21026,6 +21026,7 @@ inline HWND FindRenderWindow(HWND fallback)
 }
 
 inline HWND hTargetWindow = NULL;
+extern bool g_d3dReady;
 #include <d3d11.h>
 #include <fonts.hpp>
 
@@ -21370,10 +21371,12 @@ inline void handleKeyPresses() {
     if (GetAsyncKeyState(KeysBind.Menu) & 1) {
         Auth.MenuVisible = !Auth.MenuVisible;
         Auth.OverlayView = true;
-        if (Auth.MenuVisible) {
-            SetForegroundWindow(hwnd);
-        } else {
-            SetForegroundWindow(hTargetWindow);
+        if (!g_d3dReady) {
+            if (Auth.MenuVisible) {
+                SetForegroundWindow(hwnd);
+            } else {
+                SetForegroundWindow(hTargetWindow);
+            }
         }
     }
 }
