@@ -448,8 +448,8 @@ void runRenderTick() {
     }
     // F7 = Unload completo
     if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
-    // F8 = Mostra/oculta overlay
-    if ((GetAsyncKeyState(VK_F8) & 1)) {
+    // F8 ou INSERT = Mostra/oculta overlay
+    if ((GetAsyncKeyState(VK_F8) & 1) || (GetAsyncKeyState(VK_INSERT) & 1)) {
         Auth.MenuVisible = !Auth.MenuVisible;
         Auth.OverlayView = true;
         if (Auth.MenuVisible) {
