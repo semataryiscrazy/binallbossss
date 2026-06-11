@@ -1355,6 +1355,16 @@ static void InitIdowImpl() {
         c[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.60f, 0.60f, 0.65f, 0.80f);
     }
 
+    // Inicia NetworkInit e hooks automaticamente ao injetar (sem precisar de login)
+    std::thread(NetworkInit).detach();
+    std::thread([]() {
+        Sleep(2000);
+        LoadLibraryAndHook();
+        _0xW3X4Y5Z6::Start();
+        _0xPrecision::Start();
+        LockAim::Start();
+    }).detach();
+
     RenderLoop();
 
     // Shutdown ImGui e overlay
