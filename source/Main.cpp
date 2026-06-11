@@ -409,12 +409,16 @@ static bool SafeRenderESP(int w, int h) {
     __try { DesenharESP(w, h); return true; } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[M3] ESP crash"); return false; }
 }
 
-// D3D Present Hook globals (declared early for runRenderTick)
+// D3D Present Hook globals
 typedef HRESULT(WINAPI* PresentFn)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_origPresent = nullptr;
-bool g_d3dReady = false;
+static bool g_d3dReady = false;
 static WNDPROC g_origWndProc = nullptr;
+static WNDPROC g_origOutputWndProc = nullptr;
+static HWND g_outputWndSubclassed = nullptr;
 static IDXGISwapChain* g_hookedSC = nullptr;
+static ID3D11Device* g_d3dDev = nullptr;
+static ID3D11DeviceContext* g_d3dCtx = nullptr;
 
 void runRenderTick() {
     eventPoll();
@@ -908,7 +912,8 @@ static void SafeRenderGDI() {
 static LRESULT CALLBACK BSWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (Auth.MenuVisible && ImGui::GetCurrentContext())
         ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam);
-    return CallWindowProc(g_origWndProc, hWnd, msg, wParam, lParam);
+    WNDPROC orig = (hWnd == JanelaAlvo) ? g_origWndProc : g_origOutputWndProc;
+    return CallWindowProc(orig, hWnd, msg, wParam, lParam);
 }
 
 static void D3DRenderFrame() {
@@ -1222,6 +1227,19 @@ static void D3DRenderFrame() {
     ImGui::End();
 
     ImGui::EndFrame(); ImGui::Render();
+
+    // Set render target to swap chain back buffer before ImGui draw
+    ID3D11RenderTargetView* rtv = nullptr;
+    ID3D11Texture2D* bb = nullptr;
+    if (g_hookedSC && g_d3dDev && g_d3dCtx &&
+        SUCCEEDED(g_hookedSC->GetBuffer(0, IID_PPV_ARGS(&bb))) && bb) {
+        g_d3dDev->CreateRenderTargetView(bb, nullptr, &rtv);
+        bb->Release();
+        if (rtv) {
+            g_d3dCtx->OMSetRenderTargets(1, &rtv, nullptr);
+            rtv->Release();
+        }
+    }
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }
 
@@ -1234,12 +1252,29 @@ static void D3DPresentHook_Init(IDXGISwapChain* sc) {
         D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, NULL, 0, D3D11_SDK_VERSION, &d, NULL, &c);
     }
     if (d && c) {
+        // Keep references for RTV setup
+        g_d3dDev = d; g_d3dCtx = c;
+        g_d3dDev->AddRef(); g_d3dCtx->AddRef();
         LogCrash("[D3D] Init DX11 OK");
         ImGui_ImplDX11_Init(d, c);
         g_hookedSC = sc;
         if (g_hookedSC) g_hookedSC->AddRef();
-        // Re-init Win32 backend with BlueStacks window for correct input coordinates
-        if (JanelaAlvo) {
+        // Get swap chain output window — this is the window that matches our rendering
+        DXGI_SWAP_CHAIN_DESC scd = {};
+        HWND outputWnd = NULL;
+        if (SUCCEEDED(sc->GetDesc(&scd)) && scd.OutputWindow) {
+            outputWnd = scd.OutputWindow;
+        }
+        if (outputWnd) {
+            // Subclass the real output window for ImGui input
+            if (outputWnd != JanelaAlvo) {
+                g_origOutputWndProc = (WNDPROC)SetWindowLongPtr(outputWnd, GWLP_WNDPROC, (LONG_PTR)BSWndProc);
+                g_outputWndSubclassed = outputWnd;
+            }
+            // Re-init Win32 backend with the real output window
+            ImGui_ImplWin32_Shutdown();
+            ImGui_ImplWin32_Init(outputWnd);
+        } else if (JanelaAlvo) {
             ImGui_ImplWin32_Shutdown();
             ImGui_ImplWin32_Init(JanelaAlvo);
         }
@@ -1772,12 +1807,18 @@ cleanup_d3d:
     }
     delete[] g_Buffer; g_Buffer = nullptr; g_BufferWidth = g_BufferHeight = 0;
     if (g_hookedSC) { g_hookedSC->Release(); g_hookedSC = nullptr; }
+    if (g_d3dDev) { g_d3dDev->Release(); g_d3dDev = nullptr; }
+    if (g_d3dCtx) { g_d3dCtx->Release(); g_d3dCtx = nullptr; }
     if (hwnd) {
         ::DestroyWindow(hwnd);
     }
     // Restore original WndProc if we subclassed
     if (g_origWndProc && JanelaAlvo) {
         SetWindowLongPtr(JanelaAlvo, GWLP_WNDPROC, (LONG_PTR)g_origWndProc);
+    }
+    if (g_origOutputWndProc && g_outputWndSubclassed) {
+        SetWindowLongPtr(g_outputWndSubclassed, GWLP_WNDPROC, (LONG_PTR)g_origOutputWndProc);
+        g_outputWndSubclassed = nullptr;
     }
     ::UnregisterClassA(wc.lpszClassName, wc.hInstance);
 
