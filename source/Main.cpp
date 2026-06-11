@@ -520,7 +520,8 @@ void runRenderTick() {
             JUNK(); AntiDebugCheck();
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 10));
             ImGui::SetNextWindowSize(ImVec2(winW, winH));
-            ImGui::Begin(AY_OBFUSCATE("Satella"), nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollWithMouse);
+            ImGui::SetNextWindowPos(ImVec2((ImGui::GetIO().DisplaySize.x - winW) * 0.5f, (ImGui::GetIO().DisplaySize.y - winH) * 0.5f), ImGuiCond_Always);
+            ImGui::Begin(AY_OBFUSCATE("Satella"), nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
             {
                 ImDrawList* dl = ImGui::GetWindowDrawList();
                 ImVec2 pos = ImGui::GetWindowPos(), sz = ImGui::GetWindowSize();
