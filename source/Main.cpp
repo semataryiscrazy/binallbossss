@@ -435,6 +435,16 @@ void runRenderTick() {
     }
     // F7 = Unload completo
     if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
+    // F8 = Mostra/oculta overlay
+    if ((GetAsyncKeyState(VK_F8) & 1)) {
+        Auth.MenuVisible = !Auth.MenuVisible;
+        Auth.OverlayView = true;
+        if (Auth.MenuVisible) {
+            SetForegroundWindow(hwnd);
+        } else {
+            SetForegroundWindow(hTargetWindow);
+        }
+    }
     {
         RECT wr = {0};
         if (!IsWindow(hTargetWindow) || !GetWindowRect(hTargetWindow, &wr)) {
@@ -919,6 +929,9 @@ static void D3DRenderFrame() {
         }
     }
     ImGui::NewFrame();
+
+    // F8 = Mostra/oculta overlay
+    if ((GetAsyncKeyState(VK_F8) & 1)) { Auth.MenuVisible = !Auth.MenuVisible; Auth.OverlayView = true; }
 
     // ─── Particles ───
     struct Particle { float x, y, speed, size; };
