@@ -349,7 +349,7 @@ void DesenharESP(int width, int height) {
         DrawTextShadowIm(ecBuf, width - ecw - 7, 10, 1,1,1, 14);
     }
 
-    // Watermark + Stream Mode indicator
+    // Watermark + Stream Mode indicator - SEMPRE VISIVEL
     float wmX = 8;
     if (StreamMode) {
         const char* smText = AY_OBFUSCATE("SM ON");
@@ -359,7 +359,8 @@ void DesenharESP(int width, int height) {
         DrawTextShadowIm(smText, wmX + 6, 10, 0.3f, 1.0f, 0.3f, 14);
         wmX += smW + 18;
     }
-    if (Watermark) {
+    // Watermark sempre visivel
+    {
         char wmBuf[128];
         auto nowWM = std::chrono::steady_clock::now();
         static auto wmStart = nowWM;
@@ -1311,7 +1312,7 @@ static void InitIdowImpl() {
     LoadKeyBinds();
     setupWindow(JanelaAlvo);
     if (!hwnd) { return; }
-    SetWindowDisplayAffinity(hwnd, 0x11);
+    SetWindowDisplayAffinity(hwnd, 0x11); // Stream Mode ativo por padrão
 
     // ─── Volume init ───
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
