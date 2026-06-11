@@ -27,5 +27,5 @@ cl /LD /EHa /Fe:server\Satella.dll /MD /nologo /W3 /D_CRT_SECURE_NO_WARNINGS /DN
     /I source\Imports ^
     /I source\Unity ^
     /I keyauth ^
-    /link /LIBPATH:source\Cfg\lib libcurl_a.lib advapi32.lib shell32.lib shlwapi.lib
+    /link /LIBPATH:source\Cfg\lib libcurl_a.lib advapi32.lib shell32.lib shlwapi.lib d3d11.lib dxgi.lib
 if errorlevel 1 pause

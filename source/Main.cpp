@@ -885,6 +885,378 @@ static void SafeRenderGDI() {
     __try { ImGui_ImplGDI_RenderDrawData(ImGui::GetDrawData(), hwnd); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[M4] SafeRenderGDI crash"); }
 }
 
+// ─── D3D11 Present Hook (for BlueStacks in-process overlay) ───
+#include <d3d11.h>
+#include <dxgi.h>
+typedef HRESULT(WINAPI* PresentFn)(IDXGISwapChain*, UINT, UINT);
+static PresentFn g_origPresent = nullptr;
+static bool g_d3dReady = false;
+static WNDPROC g_origWndProc = nullptr;
+
+static LRESULT CALLBACK BSWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (Auth.MenuVisible && ImGui::GetCurrentContext())
+        ImGui_ImplWin32_WndProcHandler(hWnd, msg, wParam, lParam);
+    return CallWindowProc(g_origWndProc, hWnd, msg, wParam, lParam);
+}
+
+static void D3DRenderFrame() {
+    if (!g_d3dReady) {
+        ID3D11Device* d = nullptr; ID3D11DeviceContext* c = nullptr;
+        IDXGISwapChain* sc = nullptr;
+        if (SUCCEEDED(D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, NULL, 0, D3D11_SDK_VERSION, &d, NULL, &c))) {
+            // Use the real swap chain from the hook parameter - but we don't have it here.
+            // g_d3dReady will be set when ImGui_ImplDX11_Init succeeds.
+        }
+        if (d) d->Release(); if (c) c->Release();
+    }
+    ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
+
+    // ─── Particles ───
+    struct Particle { float x, y, speed, size; };
+    static std::vector<Particle> particles;
+    static DWORD lastPartTick2 = SafeTick();
+    DWORD nowP = SafeTick(); float dt = (nowP - lastPartTick2) / 1000.0f; lastPartTick2 = nowP;
+    if (!PerformanceMode && particles.empty()) {
+        for (int i = 0; i < 40; i++) particles.push_back({static_cast<float>(rand() % 2000) / 2000.0f * 640, static_cast<float>(rand() % 2000) / 2000.0f * 460, 15 + static_cast<float>(rand() % 500) / 100, 0.5f + static_cast<float>(rand() % 100) / 200.0f});
+    }
+
+    // ─── Stream Mode (F6) ───
+    if (GetAsyncKeyState(VK_F6) & 1) { StreamMode = !StreamMode; }
+    // F7 = Unload completo
+    if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
+    // F8 = Mostra/oculta overlay
+    if ((GetAsyncKeyState(VK_F8) & 1)) { Auth.MenuVisible = !Auth.MenuVisible; Auth.OverlayView = true; }
+
+    if (Auth.MenuVisible) {
+        static float AnimaTab = 0, Anima = 0; static int LastCurrentTab = 0, LastCurrentSub = 0, CurrentSub = 0;
+        if (LastCurrentTab != CurrentTab) { AnimaTab = (LastCurrentTab > CurrentTab) ? -460.f : 460.f; LastCurrentTab = CurrentTab; }
+        AnimaTab = ImLerp(AnimaTab, 0.f, 8.f * ImGui::GetIO().DeltaTime);
+        if (LastCurrentSub != CurrentSub) { Anima = (LastCurrentSub > CurrentSub) ? -460.f : 460.f; LastCurrentSub = CurrentSub; }
+        Anima = ImLerp(Anima, 0.f, 8.f * ImGui::GetIO().DeltaTime);
+        NotificationManager::DesenharNotificacoes();
+        if (CurrentWindow == 0) {
+            static bool autoTried = false;
+            if (!autoTried && !Auth.Autenticado && strlen(Auth.Usuario) == 0) {
+                autoTried = true; char savedUser[256] = "", savedPass[256] = "";
+                if (load_credentials(savedUser, 256, savedPass, 256)) {
+                    strcpy(Auth.Usuario, savedUser); strcpy(Auth.Senha, savedPass);
+                    loggingIn = true; std::thread([=]() { __try { ThreadAutoLogin(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] autoLogin crash"); } }).detach();
+                }
+            }
+            const float winW = 560, winH = 380, padX = 40, inputW = winW - padX * 2, btnH = 38;
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 10));
+            ImGui::SetNextWindowSize(ImVec2(winW, winH));
+            ImGui::Begin(AY_OBFUSCATE("Satella"), nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollWithMouse);
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImVec2 pos = ImGui::GetWindowPos(), sz = ImGui::GetWindowSize();
+            dl->AddRectFilled(pos, pos + sz, IM_COL32(0, 0, 0, 255), 12.0f);
+            if (!PerformanceMode) for (auto& p : particles) {
+                p.y -= p.speed * dt; p.x += sinf(p.y * 0.01f) * dt * 15;
+                if (p.y < -10) { p.y = sz.y + 10; p.x = static_cast<float>(rand() % 2000) / 2000.0f * sz.x; }
+                dl->AddCircleFilled(ImVec2(pos.x + p.x, pos.y + p.y), p.size, IM_COL32(219, 0, 166, static_cast<int>((1 - (p.y / sz.y)) * 0.3f * 255)), 6);
+            }
+            { ImGui::PushFont(InterBold); const char* t = AY_OBFUSCATE("Satella Private"); ImVec2 ts = ImGui::CalcTextSize(t); dl->AddText(pos + ImVec2((sz.x - ts.x) * 0.5f, 14), ImColor(219, 0, 166), t); ImGui::PopFont(); }
+            ImGui::PushFont(InterRegular); ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.18f, 0.45f));
+            float curY = 55;
+            if (!Auth.Autenticado) {
+                dl->AddText(pos + ImVec2(padX, curY), ImColor(180,180,180), AY_OBFUSCATE("Usuario")); curY += 20;
+                ImGui::SetCursorPos(ImVec2(padX, curY)); ImGui::PushItemWidth(inputW); ImGui::InputText(AY_OBFUSCATE("##user"), Auth.Usuario, sizeof(Auth.Usuario)); curY += 48;
+                dl->AddText(pos + ImVec2(padX, curY), ImColor(180,180,180), AY_OBFUSCATE("Senha")); curY += 20;
+                ImGui::SetCursorPos(ImVec2(padX, curY)); ImGui::PushItemWidth(inputW); ImGui::InputText(AY_OBFUSCATE("##pass"), Auth.Senha, sizeof(Auth.Senha), ImGuiInputTextFlags_Password); curY += 60;
+                if (loggingIn) { dl->AddText(pos + ImVec2(padX, curY), ImColor(219,0,166), AY_OBFUSCATE("Autenticando...")); curY += 36; }
+                else {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(219/255.f,0/255.f,166/255.f,0.8f)); ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(219/255.f,0/255.f,166/255.f,1.0f)); ImGui::PushFont(InterBold);
+                    if (ImGui::Button(AY_OBFUSCATE("Entrar"), ImVec2(inputW, btnH))) { loggingIn = true; std::thread([=]() { __try { ThreadManualLogin(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] manualLogin crash"); } }).detach(); }
+                    ImGui::PopStyleColor(2); curY += 50;
+                    if (ImGui::Button(AY_OBFUSCATE("Registrar"), ImVec2(inputW, btnH))) { REGing = true; std::thread([=]() { __try { ThreadRegister(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] register crash"); } }).detach(); }
+                }
+            } else dl->AddText(pos + ImVec2(padX, curY), ImColor(219,0,166), AY_OBFUSCATE("Bem-vindo!"));
+            ImGui::PopStyleColor(); ImGui::PopFont(); ImGui::PopStyleVar();
+            ImGui::End(); ImGui::PopStyleVar();
+        } else if (CurrentWindow == 1) {
+            static bool g_AutoStarted = false;
+            if (Auth.Autenticado && !g_AutoStarted) {
+                g_AutoStarted = true;
+                std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
+                std::thread([]() { __try { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[T] InitHooks crash"); } }).detach();
+            }
+            ImGui::SetNextWindowSize(ImVec2(640, 440));
+            ImGui::Begin("Satella", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);
+            {
+                ImDrawList* dl = ImGui::GetWindowDrawList();
+                ImVec2 pos = ImGui::GetWindowPos(), sz = ImGui::GetWindowSize();
+                dl->AddRectFilled(pos, pos + sz, IM_COL32(0, 0, 0, 255), 12.0f);
+                if (!PerformanceMode) {
+                    for (auto& p : particles) {
+                        p.y -= p.speed * dt; p.x += sinf(p.y * 0.01f) * dt * 20;
+                        if (p.y < -10) { p.y = sz.y + 10; p.x = static_cast<float>(rand() % 2000) / 2000.0f * sz.x; }
+                        float a = (1 - (p.y / sz.y)) * 0.3f;
+                        dl->AddCircleFilled(ImVec2(pos.x + p.x, pos.y + p.y), p.size, IM_COL32(219, 0, 166, static_cast<int>(a * 255)), 6);
+                    }
+                }
+                ImGui::PushFont(InterBold);
+                ImVec2 title_size = ImGui::CalcTextSize("Satella Private");
+                dl->AddText(pos + ImVec2((sz.x - title_size.x) / 2, 15), ImColor(219, 0, 166), "Satella Private");
+                ImGui::PopFont();
+                static float AnimaTab2 = 0.0f;
+                static int LastCurrentTab2 = 2;
+                if (LastCurrentTab2 != CurrentTab) {
+                    AnimaTab2 = (LastCurrentTab2 > CurrentTab) ? -460.f : 460.f;
+                    LastCurrentTab2 = CurrentTab;
+                }
+                AnimaTab2 = ImLerp(AnimaTab2, 0.f, 6.f * ImGui::GetIO().DeltaTime);
+                float contentHeight = sz.y - 85.0f;
+                if (CurrentTab == 2) {
+                    float startX = 35 + AnimaTab2;
+                    ImGui::SetCursorPos(ImVec2(startX, 65));
+                    ImGui::CustomChild("Aimbot Normal", ImVec2(275, contentHeight));
+                    {
+                        ImGui::Checkbox("Aimbot", &AimbotLegit);
+                        if (AimbotLegit) {
+                            ImGui::KeyBind("Key", &AimbotKeyBind, (int*)0);
+                            ImGui::SliderInt("FOV", &AimbotFOV, 10, 500);
+                            ImGui::SliderInt("Max Distance", &AimbotMaxDistance, 10, 500);
+                            static const char* delayOpts[] = { "Instant", "235ms", "325ms", "415ms" };
+                            ImGui::Combo("Delay", &AimbotPeitosIndex, delayOpts, IM_ARRAYSIZE(delayOpts));
+                            ImGui::Checkbox("Ignore Knocked", &AimbotIgnoreKnocked);
+                            ImGui::Checkbox("Ignore Bots", &AimbotIgnoreBots);
+                        }
+                    }
+                    ImGui::EndCustomChild();
+                    ImGui::SetCursorPos(ImVec2(startX + 285, 65));
+                    ImGui::CustomChild("Aimbot Extras", ImVec2(275, contentHeight));
+                    {
+                        ImGui::Separator();
+                        ImGui::Checkbox("Silent Aim", &AimSilent);
+                        if (AimSilent) {
+                            ImGui::KeyBind("Key", &SilentAimKeyBind, (int*)0);
+                            ImGui::SliderFloat("FOV", &SilentAimFOV, 1.0f, 180.0f, "%.0f");
+                            ImGui::SliderInt("Distance", &SilentAimDistance, 10, 500);
+                            static const char* hitboxOpts[] = { "Head", "Body" };
+                            ImGui::Combo("Hitbox", &SilentAimHitbox, hitboxOpts, IM_ARRAYSIZE(hitboxOpts));
+                            ImGui::Checkbox("Ignore Knocked", &SilentAimIgnoreKnocked);
+                            ImGui::Checkbox("Ignore Bots", &SilentAimIgnoreBots);
+                        }
+                        ImGui::Separator();
+                        ImGui::Checkbox("Precision", &PrecisionMode);
+                        ImGui::Separator();
+                        ImGui::Checkbox("No Recoil", &NoRecoilEnabled);
+                        ImGui::Separator();
+                    }
+                    ImGui::EndCustomChild();
+                } else if (CurrentTab == 3) {
+                    float startX = 35 + AnimaTab2;
+                    ImGui::SetCursorPos(ImVec2(startX, 65));
+                    ImGui::CustomChild("ESP Features", ImVec2(275, contentHeight));
+                    {
+                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Player"); ImGui::PopFont();
+                        ImGui::Separator();
+                        ImGui::Combo("Box Type", &ESPCaixa, "Off\0Full\0Cornered\0");
+                        if (ESPCaixa > 0) ImGui::Checkbox("Filled Box", &ESPFilledBox);
+                        ImGui::Checkbox("Skeleton", &ESPEsqueleto);
+                        ImGui::Checkbox("Name", &ESPNome);
+                        ImGui::Separator();
+                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Info"); ImGui::PopFont();
+                        ImGui::Separator();
+                        ImGui::Checkbox("Health Text", &ESPHealthText);
+                        ImGui::Combo("Health Bar", &ESPHealthBarPos, "Off\0Left\0Right\0Top\0Bottom\0");
+                        ImGui::Checkbox("Distance", &ESPDistancia);
+                        ImGui::Checkbox("Weapon Name", &ESPWeaponName);
+                        ImGui::Separator();
+                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Visibility"); ImGui::PopFont();
+                        ImGui::Separator();
+                        ImGui::Checkbox("Show Teammates", &ESPMostrarTime);
+                        ImGui::Checkbox("Show Knocked", &ESPMostrarDerrubado);
+                    }
+                    ImGui::EndCustomChild();
+                    ImGui::SetCursorPos(ImVec2(startX + 285, 65));
+                    ImGui::CustomChild("ESP Visuals", ImVec2(275, contentHeight));
+                    {
+                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Effects"); ImGui::PopFont();
+                        ImGui::Separator();
+                        ImGui::Checkbox("Snap Lines", &ESPLinha);
+                        if (ESPLinha) ImGui::Combo("Line From", &linePosition, "Ground\0Top\0");
+                        ImGui::Separator();
+                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Display"); ImGui::PopFont();
+                        ImGui::Separator();
+                        ImGui::Checkbox("Enemy Counter", &ESPEnemyCounter);
+                        ImGui::Checkbox("Watermark", &Watermark);
+                        ImGui::Separator();
+                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Colors"); ImGui::PopFont();
+                        ImGui::Separator();
+                        ImGui::ColorEdit4("Box", colorBox, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+                        ImGui::SameLine(); ImGui::Text(" Box");
+                        ImGui::ColorEdit4("Skeleton", colorSkeleton, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+                        ImGui::SameLine(); ImGui::Text(" Skeleton");
+                        ImGui::ColorEdit4("Line", colorLine, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+                        ImGui::SameLine(); ImGui::Text(" Line");
+                        ImGui::ColorEdit4("Name", colorName, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+                        ImGui::SameLine(); ImGui::Text(" Name");
+                        ImGui::ColorEdit4("Distance", colorDistance, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+                        ImGui::SameLine(); ImGui::Text(" Distance");
+                        ImGui::ColorEdit4("Dying", colorDying, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+                        ImGui::SameLine(); ImGui::Text(" Dying");
+                        ImGui::Separator();
+                        ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Sizes"); ImGui::PopFont();
+                        ImGui::Separator();
+                        ImGui::SliderFloat("Text Size", &espTextSize, 8.0f, 24.0f, "%.0fpx");
+                        ImGui::SliderFloat("Line Thick", &espThickness, 0.5f, 4.0f, "%.1f");
+                        ImGui::SliderFloat("Max Dist", &espMaxDistance, 50.0f, 1000.0f, "%.0f");
+                        ImGui::SliderFloat("BG Alpha", &espBgAlpha, 0.0f, 0.5f, "%.2f");
+                    }
+                    ImGui::EndCustomChild();
+                } else if (CurrentTab == 4) {
+                    float startX = 35 + AnimaTab2;
+                    ImGui::SetCursorPos(ImVec2(startX, 65));
+                    ImGui::BeginGroup();
+                    ImGui::CustomChild("Weapons", ImVec2(275, contentHeight));
+                    {
+                        ImGui::Checkbox("Weapon Attributes", &WeaponAttributesEnabled);
+                        if (WeaponAttributesEnabled) ImGui::SliderFloat("Speed", &WeaponSpeedValue, 1.0f, 2.0f, "%.2fx");
+                        ImGui::Separator();
+                        ImGui::Checkbox("Spinbot", &SpinBot);
+                        if (SpinBot) {
+                            ImGui::Combo("Mode", &SpinbotMode, "Continuous\0Random\045\xc2\xb0 Step\0");
+                            ImGui::SliderFloat("Speed", &SpinbotSpeed, 1.0f, 30.0f, "%.0f");
+                        }
+                    }
+                    ImGui::EndCustomChild();
+                    ImGui::SetCursorPos(ImVec2(startX + 285, 65));
+                    ImGui::CustomChild("Extra", ImVec2(275, contentHeight));
+                    {
+                        ImGui::Checkbox("Pixel Estendido", &PatchPixelEstendido);
+                        ImGui::Checkbox("Visao 10X", &PatchVisao10X);
+                        ImGui::Checkbox("No Recoil (AOB)", &PatchNoRecoilAOB);
+                        ImGui::Checkbox("FOV 360", &PatchFOV360);
+                        ImGui::Checkbox("Bala Infinita", &PatchBalaInfinita);
+                        ImGui::Separator();
+                    }
+                    ImGui::EndCustomChild();
+                    ImGui::EndGroup();
+                } else if (CurrentTab == 5) {
+                    float startX = 35 + AnimaTab2;
+                    ImGui::SetCursorPos(ImVec2(startX, 65));
+                    ImGui::BeginGroup();
+                    ImGui::CustomChild("Settings", ImVec2(275, contentHeight));
+                    {
+                        ImGui::Checkbox("Stream Mode", &StreamMode);
+                        ImGui::Checkbox("Performance Mode", &PerformanceMode);
+                        ImGui::Separator();
+                        ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(180, 40, 50, 200));
+                        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(210, 50, 60, 230));
+                        if (ImGui::Button("UNLOAD (F7)", ImVec2(-1, 38))) { UnloadCheat(); }
+                        if (!Auth.Attached && Auth.Autenticado) {
+                            ImGui::SameLine();
+                            if (ImGui::Button("Reconectar", ImVec2(-1, 38))) {
+                                std::thread([]() { SafeThreadFn(NetworkInit, "[T] NetworkInit"); }).detach();
+                            }
+                        }
+                        ImGui::PopStyleColor(2);
+                    }
+                    ImGui::EndCustomChild();
+                    ImGui::SetCursorPos(ImVec2(startX + 285, 65));
+                    ImGui::CustomChild("Info", ImVec2(275, contentHeight));
+                    {
+                        ImGui::TextDisabled("Satella Private");
+                        ImGui::TextDisabled("Build: v7a");
+                        ImGui::Separator();
+                        if (Auth.Attached) ImGui::TextColored(ImVec4(0.2f,1,0.2f,1), "Status: Conectado");
+                        else ImGui::TextColored(ImVec4(1,0.2f,0.2f,1), "Status: Desconectado");
+                    }
+                    ImGui::EndCustomChild();
+                    ImGui::EndGroup();
+                }
+                dl->AddRectFilled(ImVec2(pos.x, pos.y + sz.y - 20), ImVec2(pos.x + sz.x, pos.y + sz.y), IM_COL32(0, 0, 0, 255), 12.0f, ImDrawFlags_RoundCornersBottom);
+                ImGui::SetCursorPos(ImVec2(0, sz.y - 20));
+                ImGui::BeginChild("BottomTabs", ImVec2(sz.x, 20), ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar);
+                {
+                    float tab_width = 55;
+                    float total_tabs_width = tab_width * 4;
+                    ImGui::SetCursorPosX((sz.x - total_tabs_width) / 2);
+                    ImGui::PushFont(InterMedium);
+                    if (ImGui::Tab("Aimbot", "", CurrentTab == 2)) CurrentTab = 2;
+                    ImGui::SameLine(0, 0);
+                    if (ImGui::Tab("ESP", "", CurrentTab == 3)) CurrentTab = 3;
+                    ImGui::SameLine(0, 0);
+                    if (ImGui::Tab("Misc", "", CurrentTab == 4)) CurrentTab = 4;
+                    ImGui::SameLine(0, 0);
+                    if (ImGui::Tab("Settings", "", CurrentTab == 5)) CurrentTab = 5;
+                    ImGui::PopFont();
+                }
+                ImGui::EndChild();
+            }
+            ImGui::End();
+        }
+    }
+
+    SaveKeyBinds();
+
+    // -- Weapon Attributes --
+    if (Auth.Attached && cachedLocalPlayer && cachedLocalPlayer < 0x100000000ULL) {
+        WeaponAttributes::Apply(static_cast<uint32_t>(cachedLocalPlayer), WeaponSpeedValue, WeaponAttributesEnabled);
+    }
+
+    // No Recoil (thread)
+    if (Auth.Attached) Exploit::NoRecoil::Work();
+
+    // AOB Patches (aplica quando toggle liga)
+    if (Auth.Attached && cachedLocalPlayer) AplicarPatchesAOB();
+
+    // Spinbot
+    if (Auth.Attached && cachedLocalPlayer) {
+        SpinbotImpl::Execute(cachedLocalPlayer);
+    }
+
+    // Watermark
+    if (Watermark && Auth.Autenticado) { DWORD wmS = SafeTick(); if (wmS) { int hh = (int)(wmS / 3600000) % 24, mm = (int)(wmS / 60000) % 60, ss = (int)(wmS / 1000) % 60; char b[128]; snprintf(b, sizeof(b), "Satella Private | %02d:%02d:%02d", hh, mm, ss); DrawTextShadowIm(b, 10, 10, 219/255.f, 0, 166/255.f, 14); } }
+
+    // ESP
+    ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always); ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
+    ImGui::Begin("##ESPWindow", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus);
+    SafeRenderESP(static_cast<int>(ImGui::GetIO().DisplaySize.x), static_cast<int>(ImGui::GetIO().DisplaySize.y));
+    ImGui::End();
+
+    ImGui::EndFrame(); ImGui::Render();
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+}
+
+static void D3DPresentHook_Init(IDXGISwapChain* sc) {
+    ID3D11Device* d = nullptr; ID3D11DeviceContext* c = nullptr;
+    if (SUCCEEDED(sc->GetDevice(IID_PPV_ARGS(&d))) && d) {
+        d->GetImmediateContext(&c);
+        if (c) { ImGui_ImplDX11_Init(d, c); g_d3dReady = true; }
+    }
+    if (d) d->Release(); if (c) c->Release();
+}
+
+static HRESULT WINAPI PresentHook(IDXGISwapChain* sc, UINT si, UINT f) {
+    __try {
+        if (!g_d3dReady) D3DPresentHook_Init(sc);
+        if (g_d3dReady) D3DRenderFrame();
+    } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[D3D] PresentHook crash"); }
+    return g_origPresent(sc, si, f);
+}
+
+static bool HookD3D11Present(HWND targetWnd) {
+    // Create dummy swap chain to get Present vtable address
+    ID3D11Device* dev = nullptr; IDXGISwapChain* sc = nullptr; ID3D11DeviceContext* ctx = nullptr;
+    DXGI_SWAP_CHAIN_DESC sd = {};
+    sd.BufferCount = 1; sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sd.BufferDesc.Width = 1; sd.BufferDesc.Height = 1;
+    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    sd.OutputWindow = GetDesktopWindow(); sd.SampleDesc.Count = 1; sd.Windowed = TRUE;
+    HRESULT hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &sd, &sc, &dev, nullptr, &ctx);
+    if (FAILED(hr)) hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &sd, &sc, &dev, nullptr, &ctx);
+    if (FAILED(hr) || !sc) return false;
+    void** vt = *(void***)sc; g_origPresent = (PresentFn)vt[8];
+    MH_Initialize(); MH_CreateHook(g_origPresent, PresentHook, (void**)&g_origPresent); MH_EnableHook(g_origPresent);
+    if (sc) sc->Release(); if (dev) dev->Release(); if (ctx) ctx->Release();
+    // Subclass target window for input
+    if (targetWnd) g_origWndProc = (WNDPROC)SetWindowLongPtr(targetWnd, GWLP_WNDPROC, (LONG_PTR)BSWndProc);
+    LogCrash("[D3D] Hook installed");
+    return true;
+}
+
 
 
 static DWORD RunCmdSync(const char* cmd) {
@@ -1301,6 +1673,80 @@ static void InitIdowImpl() {
     }
     if (!JanelaAlvo) { JanelaAlvo = NULL; }
     LoadKeyBinds();
+
+    // Check if we're in the target process (BlueStacks)
+    bool inTargetProcess = false;
+    {
+        DWORD targetPid = 0;
+        if (JanelaAlvo) { GetWindowThreadProcessId(JanelaAlvo, &targetPid); }
+        inTargetProcess = (targetPid == GetCurrentProcessId());
+    }
+
+    if (inTargetProcess) {
+        // In BlueStacks process — use D3D11 Present hook for visibility
+        LogCrash("[Init] In-process target, using D3D11 Present hook");
+        // Init ImGui with dummy window for ImGui_ImplWin32
+        WNDCLASSEXW wc2 = { sizeof(wc2), CS_HREDRAW | CS_VREDRAW, DefWindowProcW, 0,0, GetModuleHandleW(NULL), NULL,NULL,NULL,NULL, L"SatellaHiddenD3D", NULL };
+        RegisterClassExW(&wc2);
+        HWND hiddenWnd = CreateWindowExW(0, L"SatellaHiddenD3D", L"Satella", WS_POPUP, 0,0,1,1, NULL, NULL, GetModuleHandleW(NULL), NULL);
+        if (hiddenWnd) {
+            IMGUI_CHECKVERSION(); ImGui::CreateContext();
+            ImGuiIO& io = ImGui::GetIO(); (void)io;
+            io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
+            // Load fonts
+            ImFontConfig fc; fc.FontDataOwnedByAtlas = false; fc.MergeMode = false;
+            io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 16.0f, &fc);
+            ImGui_ImplWin32_Init(hiddenWnd);
+            // Load keybinds, style, etc.
+            LoadKeyBinds();
+            // Style
+            { ImGuiStyle& s = ImGui::GetStyle(); s.WindowRounding = 12.0f; s.WindowBorderSize = 0.0f; s.WindowPadding = ImVec2(0, 0);
+            s.FrameRounding = 6.0f; s.FrameBorderSize = 0.0f; s.FramePadding = ImVec2(10, 8);
+            s.ItemSpacing = ImVec2(10, 8); s.ItemInnerSpacing = ImVec2(8, 6); s.ScrollbarSize = 6.0f;
+            s.ScrollbarRounding = 3.0f; s.GrabRounding = 4.0f; s.ChildRounding = 8.0f; s.PopupRounding = 8.0f; s.TabRounding = 6.0f;
+            auto& c = s.Colors;
+            c[ImGuiCol_WindowBg] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
+            c[ImGuiCol_ChildBg] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
+            c[ImGuiCol_PopupBg] = ImVec4(0.05f, 0.05f, 0.05f, 0.95f);
+            c[ImGuiCol_FrameBg] = ImVec4(0.10f, 0.10f, 0.12f, 0.60f);
+            c[ImGuiCol_FrameBgHovered] = ImVec4(0.15f, 0.15f, 0.17f, 0.70f);
+            c[ImGuiCol_FrameBgActive] = ImVec4(0.20f, 0.20f, 0.22f, 0.85f);
+            c[ImGuiCol_Button] = ImVec4(0.86f, 0.00f, 0.65f, 0.86f);
+            c[ImGuiCol_ButtonHovered] = ImVec4(0.94f, 0.12f, 0.75f, 0.94f);
+            c[ImGuiCol_ButtonActive] = ImVec4(1.00f, 0.24f, 0.82f, 1.00f);
+            c[ImGuiCol_Text] = ImVec4(0.95f, 0.95f, 0.97f, 1.00f);
+            c[ImGuiCol_TextDisabled] = ImVec4(0.50f, 0.50f, 0.55f, 1.00f);
+            c[ImGuiCol_CheckMark] = ImVec4(0.86f, 0.00f, 0.65f, 1.00f);
+            c[ImGuiCol_SliderGrab] = ImVec4(0.86f, 0.00f, 0.65f, 1.00f);
+            c[ImGuiCol_SliderGrabActive] = ImVec4(1.00f, 0.24f, 0.82f, 1.00f);
+            c[ImGuiCol_Separator] = ImVec4(0.15f, 0.15f, 0.17f, 1.00f);
+            c[ImGuiCol_Border] = ImVec4(0.12f, 0.12f, 0.14f, 1.00f);
+            c[ImGuiCol_Header] = ImVec4(0.86f, 0.00f, 0.65f, 0.35f);
+            c[ImGuiCol_HeaderHovered] = ImVec4(0.86f, 0.00f, 0.65f, 0.55f);
+            c[ImGuiCol_HeaderActive] = ImVec4(0.86f, 0.00f, 0.65f, 0.75f);
+            c[ImGuiCol_Tab] = ImVec4(0.00f, 0.00f, 0.00f, 0.86f);
+            c[ImGuiCol_TabHovered] = ImVec4(0.86f, 0.00f, 0.65f, 0.55f);
+            c[ImGuiCol_TabActive] = ImVec4(0.86f, 0.00f, 0.65f, 0.86f);
+            c[ImGuiCol_ScrollbarBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.50f);
+            c[ImGuiCol_ScrollbarGrab] = ImVec4(0.25f, 0.25f, 0.28f, 0.80f);
+            c[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.40f, 0.40f, 0.45f, 0.80f);
+            c[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.60f, 0.60f, 0.65f, 0.80f); }
+            // Hook D3D11 Present
+            HRESULT hr = SafeCoInitialize();
+            if (HookD3D11Present(JanelaAlvo)) {
+                // Block this thread — rendering happens in Present hook
+                LogCrash("[Init] D3D hook active, waiting");
+                while (!g_Unload) Sleep(100);
+            } else {
+                LogCrash("[Init] D3D hook failed, falling back to GDI");
+                // Fall through to GDI path
+            }
+            goto cleanup_d3d;
+        }
+        LogCrash("[Init] D3D setup failed");
+        return;
+    }
+
     setupWindow(JanelaAlvo);
     if (!hwnd) { return; }
 
@@ -1347,11 +1793,19 @@ static void InitIdowImpl() {
     LogCrash("[InitIdowImpl] entering RenderLoop");
     RenderLoop();
 
+cleanup_d3d:
     // Shutdown ImGui e overlay
-    ImGui_ImplWin32_Shutdown(); ImGui::DestroyContext();
+    ImGui_ImplWin32_Shutdown(); ImGui_ImplDX11_Shutdown(); ImGui::DestroyContext();
+    if (g_origPresent) {
+        MH_DisableHook(g_origPresent); MH_RemoveHook(g_origPresent);
+    }
     delete[] g_Buffer; g_Buffer = nullptr; g_BufferWidth = g_BufferHeight = 0;
     if (hwnd) {
         ::DestroyWindow(hwnd);
+    }
+    // Restore original WndProc if we subclassed
+    if (g_origWndProc && JanelaAlvo) {
+        SetWindowLongPtr(JanelaAlvo, GWLP_WNDPROC, (LONG_PTR)g_origWndProc);
     }
     ::UnregisterClassA(wc.lpszClassName, wc.hInstance);
 
