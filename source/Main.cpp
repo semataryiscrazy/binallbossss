@@ -7,6 +7,8 @@
 #include "Imports/EntityCache.cpp"
 #include <unordered_map>
 #include <shlobj.h>
+#include <d3d11.h>
+#include <dxgi.h>
 #include "../keyauth/ka_bridge.h"
 #include "../dynimp.h"
 #include "Imports/WeaponAttributes.cpp"
@@ -407,23 +409,15 @@ static bool SafeRenderESP(int w, int h) {
     __try { DesenharESP(w, h); return true; } __except(EXCEPTION_EXECUTE_HANDLER) { LogCrash("[M3] ESP crash"); return false; }
 }
 
+// D3D Present Hook globals (declared early for runRenderTick)
+typedef HRESULT(WINAPI* PresentFn)(IDXGISwapChain*, UINT, UINT);
+static PresentFn g_origPresent = nullptr;
+static bool g_d3dReady = false;
+static WNDPROC g_origWndProc = nullptr;
+
 void runRenderTick() {
     eventPoll();
     ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
-
-    RECT wr = {0};
-    if (!IsWindow(hTargetWindow) || !GetWindowRect(hTargetWindow, &wr)) {
-        hTargetWindow = FindRenderWindow(NULL);
-        if (!hTargetWindow) return;
-        if (!GetWindowRect(hTargetWindow, &wr)) return;
-    }
-
-    int cw = wr.right - wr.left, ch = wr.bottom - wr.top;
-    if (cw <= 0 || ch <= 0 || IsIconic(hTargetWindow)) return;
-    SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch,
-        SWP_NOACTIVATE | SWP_NOCOPYBITS);
-
-    if (!SafeNewFrame()) return;
 
     // ─── Stream Mode (F6) ───
     if (GetAsyncKeyState(VK_F6) & 1) {
@@ -447,6 +441,45 @@ void runRenderTick() {
         }
     }
 
+    if (!g_d3dReady) {
+        RECT wr = {0};
+        if (!IsWindow(hTargetWindow) || !GetWindowRect(hTargetWindow, &wr)) {
+            hTargetWindow = FindRenderWindow(NULL);
+            if (!hTargetWindow) return;
+            if (!GetWindowRect(hTargetWindow, &wr)) return;
+        }
+
+        int cw = wr.right - wr.left, ch = wr.bottom - wr.top;
+        if (cw <= 0 || ch <= 0 || IsIconic(hTargetWindow)) return;
+        SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch,
+            SWP_NOACTIVATE | SWP_NOCOPYBITS);
+
+        if (!SafeNewFrame()) return;
+    }
+
+    // ─── Stream Mode (F6) ───
+    if (GetAsyncKeyState(VK_F6) & 1) {
+        StreamMode = !StreamMode;
+        if (StreamMode) {
+            SetWindowDisplayAffinity(hwnd, 0x11);
+        } else {
+            SetWindowDisplayAffinity(hwnd, 0);
+        }
+    }
+    // F7 = Unload completo
+    if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
+    // F8 = Mostra/oculta overlay
+    if ((GetAsyncKeyState(VK_F8) & 1)) {
+        Auth.MenuVisible = !Auth.MenuVisible;
+        Auth.OverlayView = true;
+        if (Auth.MenuVisible) {
+            SetForegroundWindow(hwnd);
+        } else {
+            SetForegroundWindow(hTargetWindow);
+        }
+    }
+
+    if (!g_d3dReady) {
     // ─── Partículas (original) ───
     struct Particle { float x, y, speed, size; };
     static std::vector<Particle> particles;
@@ -850,6 +883,7 @@ void runRenderTick() {
             ImGui::End();
         }
     }
+    }
 
     SaveKeyBinds();
 
@@ -870,7 +904,7 @@ void runRenderTick() {
     }
 
     // -- AimLock (target tracking) --
-
+    if (!g_d3dReady) {
     ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
     ImGui::Begin("##ESPWindow", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus);
@@ -879,6 +913,7 @@ void runRenderTick() {
 
     ImGui::EndFrame(); ImGui::Render();
     SafeRenderGDI();
+    }
 }
 
 static void SafeRenderGDI() {
@@ -886,12 +921,6 @@ static void SafeRenderGDI() {
 }
 
 // ─── D3D11 Present Hook (for BlueStacks in-process overlay) ───
-#include <d3d11.h>
-#include <dxgi.h>
-typedef HRESULT(WINAPI* PresentFn)(IDXGISwapChain*, UINT, UINT);
-static PresentFn g_origPresent = nullptr;
-static bool g_d3dReady = false;
-static WNDPROC g_origWndProc = nullptr;
 
 static LRESULT CALLBACK BSWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (Auth.MenuVisible && ImGui::GetCurrentContext())
@@ -1685,71 +1714,6 @@ static void InitIdowImpl() {
         inTargetProcess = (targetPid == GetCurrentProcessId());
     }
 
-    if (inTargetProcess) {
-        // In BlueStacks process — use D3D11 Present hook for visibility
-        LogCrash("[Init] In-process target, using D3D11 Present hook");
-        // Init ImGui with dummy window for ImGui_ImplWin32
-        WNDCLASSEXW wc2 = { sizeof(wc2), CS_HREDRAW | CS_VREDRAW, DefWindowProcW, 0,0, GetModuleHandleW(NULL), NULL,NULL,NULL,NULL, L"SatellaHiddenD3D", NULL };
-        RegisterClassExW(&wc2);
-        HWND hiddenWnd = CreateWindowExW(0, L"SatellaHiddenD3D", L"Satella", WS_POPUP, 0,0,1,1, NULL, NULL, GetModuleHandleW(NULL), NULL);
-        if (hiddenWnd) {
-            IMGUI_CHECKVERSION(); ImGui::CreateContext();
-            ImGuiIO& io = ImGui::GetIO(); (void)io;
-            io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
-            // Load fonts
-            ImFontConfig fc; fc.FontDataOwnedByAtlas = false; fc.MergeMode = false;
-            io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\segoeui.ttf", 16.0f, &fc);
-            ImGui_ImplWin32_Init(hiddenWnd);
-            // Load keybinds, style, etc.
-            LoadKeyBinds();
-            // Style
-            { ImGuiStyle& s = ImGui::GetStyle(); s.WindowRounding = 12.0f; s.WindowBorderSize = 0.0f; s.WindowPadding = ImVec2(0, 0);
-            s.FrameRounding = 6.0f; s.FrameBorderSize = 0.0f; s.FramePadding = ImVec2(10, 8);
-            s.ItemSpacing = ImVec2(10, 8); s.ItemInnerSpacing = ImVec2(8, 6); s.ScrollbarSize = 6.0f;
-            s.ScrollbarRounding = 3.0f; s.GrabRounding = 4.0f; s.ChildRounding = 8.0f; s.PopupRounding = 8.0f; s.TabRounding = 6.0f;
-            auto& c = s.Colors;
-            c[ImGuiCol_WindowBg] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
-            c[ImGuiCol_ChildBg] = ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
-            c[ImGuiCol_PopupBg] = ImVec4(0.05f, 0.05f, 0.05f, 0.95f);
-            c[ImGuiCol_FrameBg] = ImVec4(0.10f, 0.10f, 0.12f, 0.60f);
-            c[ImGuiCol_FrameBgHovered] = ImVec4(0.15f, 0.15f, 0.17f, 0.70f);
-            c[ImGuiCol_FrameBgActive] = ImVec4(0.20f, 0.20f, 0.22f, 0.85f);
-            c[ImGuiCol_Button] = ImVec4(0.86f, 0.00f, 0.65f, 0.86f);
-            c[ImGuiCol_ButtonHovered] = ImVec4(0.94f, 0.12f, 0.75f, 0.94f);
-            c[ImGuiCol_ButtonActive] = ImVec4(1.00f, 0.24f, 0.82f, 1.00f);
-            c[ImGuiCol_Text] = ImVec4(0.95f, 0.95f, 0.97f, 1.00f);
-            c[ImGuiCol_TextDisabled] = ImVec4(0.50f, 0.50f, 0.55f, 1.00f);
-            c[ImGuiCol_CheckMark] = ImVec4(0.86f, 0.00f, 0.65f, 1.00f);
-            c[ImGuiCol_SliderGrab] = ImVec4(0.86f, 0.00f, 0.65f, 1.00f);
-            c[ImGuiCol_SliderGrabActive] = ImVec4(1.00f, 0.24f, 0.82f, 1.00f);
-            c[ImGuiCol_Separator] = ImVec4(0.15f, 0.15f, 0.17f, 1.00f);
-            c[ImGuiCol_Border] = ImVec4(0.12f, 0.12f, 0.14f, 1.00f);
-            c[ImGuiCol_Header] = ImVec4(0.86f, 0.00f, 0.65f, 0.35f);
-            c[ImGuiCol_HeaderHovered] = ImVec4(0.86f, 0.00f, 0.65f, 0.55f);
-            c[ImGuiCol_HeaderActive] = ImVec4(0.86f, 0.00f, 0.65f, 0.75f);
-            c[ImGuiCol_Tab] = ImVec4(0.00f, 0.00f, 0.00f, 0.86f);
-            c[ImGuiCol_TabHovered] = ImVec4(0.86f, 0.00f, 0.65f, 0.55f);
-            c[ImGuiCol_TabActive] = ImVec4(0.86f, 0.00f, 0.65f, 0.86f);
-            c[ImGuiCol_ScrollbarBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.50f);
-            c[ImGuiCol_ScrollbarGrab] = ImVec4(0.25f, 0.25f, 0.28f, 0.80f);
-            c[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.40f, 0.40f, 0.45f, 0.80f);
-            c[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.60f, 0.60f, 0.65f, 0.80f); }
-            // Hook D3D11 Present
-            HRESULT hr = SafeCoInitialize();
-            if (HookD3D11Present(JanelaAlvo)) {
-                // Block this thread — rendering happens in Present hook
-                LogCrash("[Init] D3D hook active, waiting");
-                while (!g_Unload) Sleep(100);
-            } else {
-                LogCrash("[Init] D3D hook failed, falling back to GDI");
-                // Fall through to GDI path
-            }
-            goto cleanup_d3d;
-        }
-        LogCrash("[Init] D3D setup failed");
-        return;
-    }
-
     setupWindow(JanelaAlvo);
     if (!hwnd) { return; }
 
@@ -1794,6 +1758,16 @@ static void InitIdowImpl() {
     }
 
     LogCrash("[InitIdowImpl] entering RenderLoop");
+    // Try D3D11 Present hook if in target process (non-blocking)
+    if (inTargetProcess && JanelaAlvo) {
+        LogCrash("[Init] In-process target, installing D3D11 Present hook");
+        HRESULT hr = SafeCoInitialize();
+        if (HookD3D11Present(JanelaAlvo)) {
+            LogCrash("[Init] D3D hook installed, GDI overlay will be invisible");
+        } else {
+            LogCrash("[Init] D3D hook failed, using GDI overlay");
+        }
+    }
     RenderLoop();
 
 cleanup_d3d:
