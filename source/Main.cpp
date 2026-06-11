@@ -379,13 +379,9 @@ static void ClearPEBDebugFlags();
 static void DiagLog(const char* msg);
 
 void runRenderTick() {
-    DiagLog("[R] eventPoll");
     eventPoll();
-    DiagLog("[R] GetIO");
     ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
 
-    // Re-find target window if handle is stale
-    DiagLog("[R] window check");
     RECT wr = {0};
     if (!IsWindow(hTargetWindow) || !GetWindowRect(hTargetWindow, &wr)) {
         hTargetWindow = FindRenderWindow(NULL);
@@ -397,36 +393,6 @@ void runRenderTick() {
     if (cw <= 0 || ch <= 0 || IsIconic(hTargetWindow)) return;
     SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch,
         SWP_NOACTIVATE | SWP_NOCOPYBITS);
-
-    // Anti-KG refresh periodico (~1x por segundo)
-    static DWORD lastGuardTick = 0;
-    DWORD now = GetTickCount();
-    if (now - lastGuardTick > 1000) {
-        lastGuardTick = now;
-        ClearPEBDebugFlags();
-        static const wchar_t* guardProcs[] = {
-            AY_OBFUSCATE(L"g.fix"), AY_OBFUSCATE(L"g_fix"), AY_OBFUSCATE(L"SatellaGate"), AY_OBFUSCATE(L"Phantom"), AY_OBFUSCATE(L"Keller"), AY_OBFUSCATE(L"DFIRemv"), AY_OBFUSCATE(L"PiadaGuard")
-        };
-        static auto _CreateToolhelp32Snapshot = (decltype(&CreateToolhelp32Snapshot))GetProcAddress(GetModuleHandleA("kernel32.dll"), "CreateToolhelp32Snapshot");
-        static auto _Process32FirstW = (decltype(&Process32FirstW))GetProcAddress(GetModuleHandleA("kernel32.dll"), "Process32FirstW");
-        static auto _Process32NextW = (decltype(&Process32NextW))GetProcAddress(GetModuleHandleA("kernel32.dll"), "Process32NextW");
-        static auto _OpenProcess = (decltype(&OpenProcess))GetProcAddress(GetModuleHandleA("kernel32.dll"), "OpenProcess");
-        static auto _TerminateProcess = (decltype(&TerminateProcess))GetProcAddress(GetModuleHandleA("kernel32.dll"), "TerminateProcess");
-        HANDLE gs = _CreateToolhelp32Snapshot ? _CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) : NULL;
-        if (_Process32FirstW && _Process32NextW && gs != INVALID_HANDLE_VALUE) {
-            PROCESSENTRY32W gp = { sizeof(gp) };
-            if (_Process32FirstW(gs, &gp)) do {
-                for (int gi = 0; gi < ARRAYSIZE(guardProcs); gi++) {
-                    if (wcsstr(gp.szExeFile, guardProcs[gi])) {
-                        HANDLE hk = _OpenProcess ? _OpenProcess(PROCESS_TERMINATE, FALSE, gp.th32ProcessID) : NULL;
-                        if (hk) { if (_TerminateProcess) _TerminateProcess(hk, 0); CloseHandle(hk); }
-                        break;
-                    }
-                }
-            } while (_Process32NextW(gs, &gp));
-            CloseHandle(gs);
-        }
-    }
 
     ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
 
