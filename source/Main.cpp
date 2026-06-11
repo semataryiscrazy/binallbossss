@@ -383,6 +383,19 @@ void runRenderTick() {
     eventPoll();
     ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
 
+    // Quando menu fechado: janela transparente a cliques (passa input para o emulador)
+    // Quando menu aberto: janela captura input
+    LONG exStyle = GetWindowLongA(hwnd, GWL_EXSTYLE);
+    if (Auth.MenuVisible) {
+        // Remove WS_EX_TRANSPARENT para capturar mouse
+        if (exStyle & WS_EX_TRANSPARENT)
+            SetWindowLongA(hwnd, GWL_EXSTYLE, exStyle & ~WS_EX_TRANSPARENT);
+    } else {
+        // Adiciona WS_EX_TRANSPARENT para deixar clicks passarem pro emulador
+        if (!(exStyle & WS_EX_TRANSPARENT))
+            SetWindowLongA(hwnd, GWL_EXSTYLE, exStyle | WS_EX_TRANSPARENT);
+    }
+
     // --- MEMORY CHECK VERIFICATION --- disabled (crash no emulador)
     // static int integrityCheckCounter = 0;
     // integrityCheckCounter++;
