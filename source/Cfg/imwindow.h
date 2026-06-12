@@ -21334,12 +21334,12 @@ inline LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         break;
     case WM_MOUSEACTIVATE:
         if (!Auth.MenuVisible) return MA_NOACTIVATE;
-        break;
+        return MA_ACTIVATE;
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
     case WM_MBUTTONDOWN:
         if (Auth.MenuVisible) SetFocus(hWnd);
-        break;
+        return 0;
     case WM_SIZE:
         if (wParam != SIZE_MINIMIZED) {
             Twidht = (UINT)LOWORD(lParam);
