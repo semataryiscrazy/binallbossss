@@ -113,6 +113,7 @@ inline bool ShowDebugConsole = false;
 inline bool Watermark = true;
 inline bool FPSCounter = true;
 inline bool WeaponAttributesEnabled = false;
+inline int WeaponAttributesLevel = 0;
 inline bool SpinBot = false;
 inline int SpinbotMode = 0; // 0=Continuous, 1=Random, 2=45° Step
 inline float SpinbotSpeed = 5.0f;
@@ -137,6 +138,7 @@ inline bool PatchWallHack = false;
 inline bool PatchSpeedHack = false;
 inline bool PatchCameraLeft = false;
 inline bool PatchTracking2X = false;
+inline bool PatchAimbotDrag = false;
 inline bool PatchWallhack2 = false;
 inline bool PatchWallhack3 = false;
 // Guarda se cada patch ja foi aplicado (evita re-aplicar)

@@ -21,6 +21,7 @@
 #include "Imports/NoRecoil.cpp"
 HINSTANCE g_hDll = nullptr;
 bool g_Unload = false;
+bool g_d3dReady = false;
 ImFont* FontAwesomeRegular = nullptr;
 ImFont* FontAwesomeSolid14 = nullptr;
 ImFont* FontAwesomeBrands = nullptr;
@@ -1031,20 +1032,17 @@ static void deep_clean_internal() {
 }
 
 static void RenderLoop() {
-    __try {
-        using namespace std::chrono;
-        auto lastRender = steady_clock::now();
-        while (!g_Unload) {
-            handleKeyPresses();
-            auto now = steady_clock::now();
-            long long frameInterval = PerformanceMode ? 33333333 : 16666666;
-            if (duration_cast<nanoseconds>(now - lastRender).count() >= frameInterval) {
-                lastRender = now;
-                runRenderTick();
-            }
-            Sleep(PerformanceMode ? 5 : 1);
+    using namespace std::chrono;
+    auto lastRender = steady_clock::now();
+    while (!g_Unload) {
+        __try { handleKeyPresses(); } __except(EXCEPTION_EXECUTE_HANDLER) {}
+        auto now = steady_clock::now();
+        long long frameInterval = PerformanceMode ? 33333333 : 16666666;
+        if (duration_cast<nanoseconds>(now - lastRender).count() >= frameInterval) {
+            lastRender = now;
+            __try { runRenderTick(); } __except(EXCEPTION_EXECUTE_HANDLER) {}
         }
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        Sleep(PerformanceMode ? 5 : 1);
     }
 }
 
