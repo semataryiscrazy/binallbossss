@@ -6,6 +6,7 @@
 #include "Main.h"
 #include "Imports/EntityCache.cpp"
 #include <chrono>
+#include <ctime>
 #include <unordered_map>
 #include <shlobj.h>
 #include <shellapi.h>
@@ -19,6 +20,13 @@
 #include "Cfg/Obfuscation.h"
 #include "Imports/LockAim.cpp"
 #include "Imports/NoRecoil.cpp"
+
+#include "Imports/Cleaner.h"
+#include "Imports/Cleaner.cpp"
+//#include "../aimbot/RageAimbot.cpp"
+#ifndef WDA_EXCLUDEFROMCAPTURE
+#define WDA_EXCLUDEFROMCAPTURE 0x11
+#endif
 HINSTANCE g_hDll = nullptr;
 bool g_Unload = false;
 bool g_d3dReady = false;
@@ -27,6 +35,23 @@ ImFont* FontAwesomeSolid14 = nullptr;
 ImFont* FontAwesomeBrands = nullptr;
 void UnloadCheat();
 extern "C" __declspec(dllexport) void TriggerUnload() { UnloadCheat(); }
+
+static uint64_t ReadLocalPlayer() {
+    if (il2cpp < 0x10000) return 0;
+    uintptr_t b = Ler<uintptr_t>(il2cpp + Offsets::InitBase);
+    if (b < 0x10000) return 0;
+    uintptr_t f = Ler<uintptr_t>(b);
+    if (f < 0x10000) return 0;
+    uintptr_t sf = Ler<uintptr_t>(f + Offsets::StaticClass);
+    if (sf < 0x10000) return 0;
+    uintptr_t ge = Ler<uintptr_t>(sf);
+    if (ge < 0x10000) return 0;
+    uintptr_t cm = Ler<uintptr_t>(ge + Offsets::CurrentMatch);
+    if (cm < 0x10000) return 0;
+    int ms = Ler<int>(cm + Offsets::MatchStatus);
+    if (ms != 1) return 0;
+    return Ler<uintptr_t>(cm + Offsets::LocalPlayer);
+}
 
 // ─── Auto-login: salva/carrega credenciais no registro ───
 static const char* REG_KEY = AY_OBFUSCATE("Software\\Satella");
@@ -123,46 +148,7 @@ void UnloadCheat();
 static void AplicarPatchesAOB() {
     if (il2cpp == 0 || il2cppSize == 0) return;
 
-    // --- Pattern arrays ---
-    static const uint8_t pat_06DA93B0[] = {0x90,0xC1,0x00,0x00,0x70,0x41,0x01,0x00,0x00,0x00,0x00,0x00,0xC0,0x3F,0x00,0x00,0x00,0x3F,0x00,0x00,0x80,0x3F};
-    static const uint8_t pat_06DA93B0_mod[] = {0x90,0xC1,0x00,0x00,0x70,0x41,0x01,0x00,0x00,0x00,0x00,0x00,0xC0,0x00,0x00,0x00,0x00,0x3F,0x00,0x00,0x80,0x3F};
-    static const uint8_t pat_visao10x[] = {0xF4,0x04,0x00,0xA0,0xE1,0x0A,0x0A,0x84,0xED,0x0E,0x2A,0x84,0xED,0x05,0x1A,0x84,0xED,0x00,0x3A,0x84,0xED,0xF0,0x81,0xBD,0xE8,0x00,0x00,0xB4,0x43,0xDB,0x0F,0x49,0x40,0x10,0x2A,0x00,0xEE,0x00,0x10,0x80,0xE5,0x10,0x3A,0x01,0xEE,0x14,0x10,0x80,0xE5,0x00,0x2A,0x30,0xEE,0x00,0x10,0x00,0xE3,0x41,0x3A,0x30,0xEE,0x80,0x1F};
-    static const uint8_t pat_visao10x_mod[] = {0xF4,0x04,0x00,0xA0,0xE1,0x0A,0x0A,0x84,0xED,0x0E,0x2A,0x84,0xED,0x05,0x1A,0x84,0xED,0x00,0x3A,0x84,0xED,0xF0,0x81,0xBD,0xE8,0x00,0x00,0xB4,0x43,0xDB,0x0F,0x90,0x40,0x10,0x2A,0x00,0xEE,0x00,0x10,0x80,0xE5,0x10,0x3A,0x01,0xEE,0x14,0x10,0x80,0xE5,0x00,0x2A,0x30,0xEE,0x00,0x10,0x00,0xE3,0x41,0x3A,0x30,0xEE,0x80,0x1F};
-    static const uint8_t pat_norecoil[] = {0x7A,0x44,0xF0,0x48,0x2D,0xE9,0x10,0xB0,0x8D,0xE2,0x02,0x8B,0x2D,0xED,0x08,0xD0};
-    static const uint8_t pat_norecoil_mod[] = {0x7A,0xFF,0xF0,0x48,0x2D,0xE9,0x10,0xB0,0x8D,0xE2,0x02,0x8B,0x2D,0xED,0x08,0xD0};
-    static const uint8_t pat_fov360[] = {0x70,0x42,0x00,0x00,0x00,0x00,0x00,0x00,0xC0,0x3F,0x0A,0xD7,0xA3,0x3B,0x0A,0xD7,0xA3,0x3B,0x8F,0xC2,0x75,0x3D,0xAE,0x47,0xE1,0x3D,0x9A,0x99,0x19,0x3E,0xCD,0xCC,0x4C,0x3E,0xA4,0x70,0xFD,0x3E};
-    static const uint8_t pat_fov360_mod[] = {0xFF,0xFF,0x00,0x00,0x00,0x00,0x00,0x00,0xC0,0x3F,0x0A,0xD7,0xA3,0x3B,0x0A,0xD7,0xA3,0x3B,0x8F,0xC2,0x75,0x3D,0xAE,0x47,0xE1,0x3D,0x9A,0x99,0x19,0x3E,0xCD,0xCC,0x4C,0x3E,0xA4,0x70,0xFD,0x3E};
-    static const uint8_t pat_balainf[] = {0xD8,0x00,0xD0,0xE5,0x1E,0xFF,0x2F,0xE1};
-    static const uint8_t pat_balainf_mod[] = {0xFC,0x26,0x00,0x00,0x1E,0xFF,0x2F,0xE1};
-    static const uint8_t pat_wallhack[] = {0x3F,0xAE,0x47,0x81,0x3F,0xAE,0x47,0x81,0x3F,0xAE,0x47,0x81,0x3F,0x00,0x1A,0xB7,0xEE,0xDC,0x3A,0x9F,0xED,0x30,0x00,0x4F,0xE2,0x43,0x2A,0xB0,0xEE,0xEF,0x0A,0x60,0xF4,0x43,0x6A,0xF0,0xEE,0x1C,0x00,0x8A,0xE2,0x43,0x5A,0xF0,0xEE,0x8F,0x0A,0x48,0xF4,0x43,0x2A,0xF0,0xEE,0x43,0x7A,0xB0,0xEE,0x8F,0x0A,0x40,0xF4,0x41,0xAA,0xB0,0xEE,0xFE,0x05,0xA0,0xE3,0x41,0x1A,0xF0,0xEE,0x2C,0x00,0x8A,0xE5,0x10};
-    static const uint8_t pat_wallhack_mod[] = {0x3F,0xAE,0x47,0x81,0x3F,0xAE,0x47,0x81,0xBF,0xAE,0x47,0x81,0x3F,0x00,0x1A,0xB7,0xEE,0xDC,0x3A,0x9F,0xED,0x30,0x00,0x4F,0xE2,0x43,0x2A,0xB0,0xEE,0xEF,0x0A,0x60,0xF4,0x43,0x6A,0xF0,0xEE,0x1C,0x00,0x8A,0xE2,0x43,0x5A,0xF0,0xEE,0x8F,0x0A,0x48,0xF4,0x43,0x2A,0xF0,0xEE,0x43,0x7A,0xB0,0xEE,0x8F,0x0A,0x40,0xF4,0x41,0xAA,0xB0,0xEE,0xFE,0x05,0xAE,0xE3,0x41,0x1A,0xF0,0xEE,0x2C,0x00,0x8A,0xE5,0x10};
-    static const uint8_t pat_speedhack[] = {0x02,0x2B,0x07,0x3D,0x02,0x2B,0x07,0x3D,0x02,0x2B,0x07,0x3D,0x00,0x00,0x00,0x00,0x9B,0x6C,0xF2,0x41,0x00,0x00,0x00,0x00};
-    static const uint8_t pat_speedhack_mod[] = {0xE3,0xA5,0x9B,0x3C,0xE3,0xA5,0x9B,0x3C,0x02,0x2B,0x07,0x3D,0x00,0x00,0x00,0x00,0x9B,0x6C,0xF2,0x41,0x00,0x00,0x00,0x00};
-    static const uint8_t pat_camleft[] = {0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x3F,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0xBF,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0xBF,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x3F,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
-    static const uint8_t pat_camleft_mod[] = {0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x40,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0xBF,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0xBF,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x3F,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0xBF};
-    static const uint8_t pat_tracking2x[] = {0xC0,0x3F,0x33,0x33,0x93,0x3F,0x8F,0xC2,0xF5,0x3C,0xCD,0xCC,0xCC,0x3D,0x02,0x00,0x00,0x00,0xEC,0x51,0xB8,0x3D,0xCD,0xCC,0x4C,0x3F,0x00,0x00,0x00,0x00,0x00,0x00,0xA0,0x42,0x00,0x00,0xC0,0x3F,0x33,0x33,0x13,0x40,0x00,0x00,0xF0,0x3F,0x00,0x00,0x80,0x3F,0x01};
-    static const uint8_t pat_tracking2x_mod[] = {0xC0,0x3F,0x33,0x33,0x93,0x3F,0x8F,0xC2,0xF5,0x3C,0xCD,0xCC,0xCC,0x3D,0x00,0x00,0x00,0x00,0xEC,0x51,0xB8,0x3D,0xCD,0xCC,0x4C,0x3F,0x00,0x00,0x00,0x00,0x00,0x00,0xA0,0x42,0x00,0x00,0xC0,0x3F,0x33,0x33,0x13,0x40,0x00,0x00,0xF0,0x3F,0x00,0x00,0x80,0x5C,0x01};
 
-    struct { const uint8_t* search; const uint8_t* replace; const char* mask; size_t len; bool* applied; bool* toggle; } tbl[] = {
-        { pat_06DA93B0, pat_06DA93B0_mod, "xxxxxxxxxxxxxxxxxxxxxx", 22, &PatchPixelEstendidoAplicado, &PatchPixelEstendido },
-        { pat_visao10x, pat_visao10x_mod, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", 68, &PatchVisao10XAplicado, &PatchVisao10X },
-        { pat_norecoil, pat_norecoil_mod, "xxxxxxxxxxxxxxxx", 16, &PatchNoRecoilAOBAplicado, &PatchNoRecoilAOB },
-        { pat_fov360, pat_fov360_mod, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", 38, &PatchFOV360Aplicado, &PatchFOV360 },
-        { pat_balainf, pat_balainf_mod, "xxxxxxxx", 8, &PatchBalaInfinitaAplicado, &PatchBalaInfinita },
-        { pat_wallhack, pat_wallhack_mod, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", 78, &PatchWallHackAplicado, &PatchWallHack },
-        { pat_speedhack, pat_speedhack_mod, "xxxxxxxxxxxxxxxxxxxxxxxx", 24, &PatchSpeedHackAplicado, &PatchSpeedHack },
-        { pat_camleft, pat_camleft_mod, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", 48, &PatchCameraLeftAplicado, &PatchCameraLeft },
-        { pat_tracking2x, pat_tracking2x_mod, "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", 51, &PatchTracking2XAplicado, &PatchTracking2X },
-    };
-
-    for (auto& p : tbl) {
-        if (*p.toggle && !*p.applied) {
-            AOBPattern pat = { p.search, p.replace, p.mask, p.len, "" };
-            if (AOBApply(pat, il2cpp, il2cppSize)) {
-                *p.applied = true;
-            }
-        }
-    }
 }
 
 // --- ESP -----------------------------------------------------
@@ -170,46 +156,136 @@ static void AplicarPatchesAOB() {
 void DesenharESP(int width, int height) {
     espOffsetX = 0; espOffsetY = 0;
     SWidth = width; SHeight = height;
-    if (!Auth.AtivarFuncoes || !Auth.Attached) return;
-    UpdateEntityCache();
 
-    // Cache deve estar inicializado
-    uint64_t matrixTs = renderMatrixTimestamp.load();
-    if (matrixTs == 0) return;
+    if (!Auth.AtivarFuncoes || !Auth.Attached) return;
+    AimbotDistMax = 9999.9f; AimbotTarget = 0;
+
+    // ─── Leitura direta (sem cache thread) ───
+    uintptr_t base = Ler<uintptr_t>(il2cpp + Offsets::InitBase);
+    if (base == 0 || base < 0x10000) return;
+    uintptr_t facade = Ler<uintptr_t>(base);
+    if (facade == 0 || facade < 0x10000) return;
+    uintptr_t staticFacade = Ler<uintptr_t>(facade + Offsets::StaticClass);
+    if (staticFacade == 0 || staticFacade < 0x10000) return;
+    uintptr_t GameEngine = Ler<uintptr_t>(staticFacade);
+    if (GameEngine == 0 || GameEngine < 0x10000) return;
+
+    uintptr_t Partida = Ler<uintptr_t>(GameEngine + Offsets::CurrentMatch);
+    if (Partida == 0) return;
+    int MatchState = Ler<int>(Partida + Offsets::MatchStatus);
+    if (MatchState != 1) return;
+
+    uintptr_t JogadorLocal = Ler<uintptr_t>(Partida + Offsets::LocalPlayer);
+    if (JogadorLocal == 0 || JogadorLocal < 0x10000) return;
+
+    // Camera
+    uintptr_t CameraControllerManager = Ler<uintptr_t>(GameEngine + 0x74);
+    if (CameraControllerManager == 0) return;
+    uintptr_t Camera = Ler<uintptr_t>(CameraControllerManager + 0x10);
+    if (Camera == 0) return;
+    uintptr_t IntPtrCam = Ler<uintptr_t>(Camera + 0x8);
+    if (IntPtrCam == 0) return;
+    UnityMatrix matrix = Ler<UnityMatrix>(IntPtrCam + Offsets::ViewMatrix);
+
+    Vector3 minhaPos = Transform_ObterPosicao(Ler<uintptr_t>(JogadorLocal + Offsets::MainTransform));
+
+    // Deteccao de offsets
+    DetectAndSetOffsets();
+
+    // Entidades
+    uintptr_t dict = Ler<uintptr_t>(GameEngine + Offsets::DictionaryEntities);
+    if (dict == 0) return;
+    uintptr_t list = Ler<uintptr_t>(dict + Offsets::Il2CppDictionaryDataPtr);
+    if (list == 0) return;
+    list += 0x10;
+    int cnt = Ler<int>(dict + Offsets::Il2CppDictionaryCount);
+    if (cnt < 1 || cnt > 200) return;
 
     int entityCount = 0;
-    AimbotDistMax = 9999.9f; AimbotTarget = 0;
-    { std::lock_guard<std::mutex> lock(GetCacheWriteMutex());
-    for (auto& [addr, c] : GetEntityCache()) {
-        if (!c.valid) continue;
-        if (c.isTeam && !ESPMostrarTime) continue;
-        if (c.dying && !ESPMostrarDerrubado) continue;
-        bool inEspRange = c.dist <= espMaxDistance;
-        if (!inEspRange && !AimbotLegit && !AimSilent) continue;
+    for (int i = 0; i < cnt; i++) {
+        uintptr_t e = Ler<uintptr_t>(list + (i * 0x10) + 0xC);
+        if (e == 0 || e == JogadorLocal) continue;
 
-        ImVec4 col = c.dying ? ImVec4(colorDying[0],colorDying[1],colorDying[2],colorDying[3])
-                             : ImVec4(colorName[0],colorName[1],colorName[2],colorName[3]);
+        uintptr_t am = Ler<uintptr_t>(e + Offsets::AvatarManager);
+        if (am == 0 || am < 0x10000) continue;
+        uintptr_t uas = Ler<uintptr_t>(am + Offsets::UmaAvatarSimple);
+        if (uas == 0 || uas < 0x10000) continue;
+        uintptr_t ud = Ler<uintptr_t>(uas + Offsets::UMAData);
+        if (ud == 0 || ud < 0x10000) continue;
+        uintptr_t pri = Ler<uintptr_t>(e + Offsets::PRIDataPool);
+        if (pri == 0 || pri < 0x10000) continue;
+        uintptr_t rdu = Ler<uintptr_t>(Ler<uintptr_t>(pri + Offsets::ReplicationDataPoolUnsafe) + Offsets::ReplicationDataUnsafe);
+        if (rdu == 0 || rdu < 0x10000) continue;
+        short health = Ler<short>(rdu + Offsets::Health);
+        if (health <= 0) continue;
+
+        bool dying = false;
+        uintptr_t pd = Ler<uintptr_t>(e + Offsets::Player_Data);
+        if (pd != 0 && pd > 0x10000) dying = (Ler<int>(pd + Offsets::Player_IsDead) == 8);
+
+        bool isTeam = Ler<bool>(ud + Offsets::TeamMate);
+        if (isTeam && !ESPMostrarTime) continue;
+        if (dying && !ESPMostrarDerrubado) continue;
+
+        bool garota = Ler<bool>(e + Offsets::CDOBMFNCJHD);
+        uintptr_t mtOff = g_AutoMainTransform ? g_AutoMainTransform : Offsets::MainTransform;
+        Vector3 bodyPos = Transform_ObterPosicao(Ler<uintptr_t>(e + mtOff));
+        Vector3 headPos = GetHeadPosition(e);
+
+        float dist = Vector3::Distance(bodyPos, minhaPos);
+        bool inEspRange = dist <= espMaxDistance;
+        if (!inEspRange && !AimbotLegit) continue;
+
+        std::string pName = "BOT";
+        uintptr_t bpi = Ler<uintptr_t>(e + Offsets::Player_Name);
+        if (bpi != 0) {
+            uintptr_t pn = Ler<uintptr_t>(bpi + 0x18);
+            if (pn != 0) {
+                int nc = Ler<int>(pn + 0x8);
+                pName = ObterStr(pn + 0xC, nc);
+            }
+        }
+
+        std::string wpnName;
+        uintptr_t wpn = Ler<uintptr_t>(e + Offsets::Weapon);
+        if (wpn > 0x10000) {
+            uintptr_t wpnd = Ler<uintptr_t>(wpn + Offsets::WeaponData);
+            if (wpnd > 0x10000) {
+                auto wpnBpi = Ler<uintptr_t>(wpnd + 0x8);
+                if (wpnBpi != 0) {
+                    auto wpnPn = Ler<uintptr_t>(wpnBpi + 0x18);
+                    if (wpnPn != 0) {
+                        int wpnNc = Ler<int>(wpnPn + 0x8);
+                        wpnName = ObterStr(wpnPn + 0xC, wpnNc);
+                    }
+                }
+            }
+        }
+
+        ImVec4 col = dying ? ImVec4(colorDying[0],colorDying[1],colorDying[2],colorDying[3])
+                           : ImVec4(colorName[0],colorName[1],colorName[2],colorName[3]);
         float ox = espOffsetX, oy = espOffsetY;
 
-        // Projeta em tempo real com a matrix mais recente para acompanhar a camera
-        Vector3 WorldEnemyHeadPos = World2Screen(renderMatrix, c.headPos);
-        Vector3 WorldEnemyFootPos = World2Screen(renderMatrix, c.bodyPos);
+        Vector3 WorldEnemyHeadPos = World2Screen(matrix, headPos);
+        Vector3 WorldEnemyFootPos = World2Screen(matrix, bodyPos);
         if (WorldEnemyHeadPos.Z != 0 || WorldEnemyFootPos.Z != 0) continue;
         entityCount++;
 
-        // Seleção de alvo para LockAim + SilentAim
-        if ((AimbotLegit || AimSilent) && !c.isTeam) {
+        // Aimbot target selection
+        if (AimbotLegit && !isTeam) {
             float adx = WorldEnemyHeadPos.X - (SWidth * 0.5f);
             float ady = WorldEnemyHeadPos.Y - (SHeight * 0.5f);
-            float fov = AimbotLegit ? (float)AimbotFOV : SilentAimFOV;
-            float maxDist = AimbotLegit ? (float)AimbotMaxDistance : (float)SilentAimDistance;
-            bool skipKnocked = (AimbotLegit ? AimbotIgnoreKnocked : SilentAimIgnoreKnocked) && c.dying;
-            bool skipBot = (AimbotLegit ? AimbotIgnoreBots : SilentAimIgnoreBots) && Ler<bool>((uint32_t)(addr + Offsets::IsClientBot));
-            if (c.dist <= maxDist && !skipKnocked && !skipBot && adx*adx + ady*ady <= fov*fov) {
+            float fov = (float)AimbotFOV;
+            float maxDist = (float)AimbotMaxDistance;
+            bool skipKnocked = AimbotIgnoreKnocked && dying;
+            bool skipBot = AimbotIgnoreBots && Ler<bool>((uint32_t)(e + Offsets::IsClientBot));
+            if (dist <= maxDist && !skipKnocked && !skipBot && adx*adx + ady*ady <= fov*fov) {
                 float d = sqrtf(adx*adx + ady*ady);
-                if (d < AimbotDistMax) { AimbotDistMax = d; AimbotTarget = addr; }
+                if (d < AimbotDistMax) { AimbotDistMax = d; AimbotTarget = e; }
             }
         }
+
+        if (!inEspRange) continue;
 
         float Height = WorldEnemyFootPos.Y - WorldEnemyHeadPos.Y;
         if (Height < 10.f) Height = 10.f;
@@ -219,7 +295,7 @@ void DesenharESP(int width, int height) {
         float by = WorldEnemyHeadPos.Y;
 
         if (ESPNome) {
-            const char* name = c.name.empty()?"BOT":c.name.c_str();
+            const char* name = pName.c_str();
             float tw = ImGui::CalcTextSize(name).x;
             float tx = WorldEnemyHeadPos.X+ox - tw*0.5f;
             float ty = by+oy - espTextSize - 2;
@@ -228,9 +304,8 @@ void DesenharESP(int width, int height) {
             DrawTextShadowIm(name, tx, ty, col.x, col.y, col.z, espTextSize);
         }
 
-        // Health Text (acima do nome, antes da caixa)
         if (ESPHealthText) {
-            char hBuf[16]; snprintf(hBuf, sizeof(hBuf), "%d HP", c.health);
+            char hBuf[16]; snprintf(hBuf, sizeof(hBuf), "%d HP", health);
             float htw = ImGui::CalcTextSize(hBuf).x;
             float htx = WorldEnemyHeadPos.X+ox - htw*0.5f;
             float hty = by+oy - espTextSize - 2 - (ESPNome ? espTextSize + 2 : 0);
@@ -239,20 +314,18 @@ void DesenharESP(int width, int height) {
             DrawTextShadowIm(hBuf, htx, hty, col.x, col.y, col.z, espTextSize);
         }
 
-        // Weapon Name (abaixo da distancia)
-        if (ESPWeaponName && !c.weaponName.empty()) {
-            float wtw = ImGui::CalcTextSize(c.weaponName.c_str()).x;
+        if (ESPWeaponName && !wpnName.empty()) {
+            float wtw = ImGui::CalcTextSize(wpnName.c_str()).x;
             float wtx = WorldEnemyHeadPos.X+ox - wtw*0.5f;
             float wty = by+oy + Height + 2 + (ESPDistancia ? espTextSize + 2 : 0);
             if (espBgAlpha > 0.01f)
                 DrawRectFilledIm(wtx-3, wty-2, wtw+6, espTextSize+4, 0,0,0,espBgAlpha);
-            DrawTextShadowIm(c.weaponName.c_str(), wtx, wty, colorBox[0], colorBox[1], colorBox[2], espTextSize);
+            DrawTextShadowIm(wpnName.c_str(), wtx, wty, colorBox[0], colorBox[1], colorBox[2], espTextSize);
         }
 
-        // Snap Lines (s� se entidade tem altura vis�vel na tela)
         float rawH = WorldEnemyFootPos.Y - WorldEnemyHeadPos.Y;
         if (ESPLinha && rawH > 5.0f) {
-            float lineEndY = WorldEnemyHeadPos.Y+oy+Height+(ESPDistancia?espTextSize+2:1)+(ESPWeaponName&&!c.weaponName.empty()?espTextSize+2:0);
+            float lineEndY = WorldEnemyHeadPos.Y+oy+Height+(ESPDistancia?espTextSize+2:1)+(ESPWeaponName&&!wpnName.empty()?espTextSize+2:0);
             float sx = WorldEnemyHeadPos.X+ox;
             if (linePosition==1 && sx > 0 && sx < width && lineEndY > 0 && lineEndY < height)
                 DrawLineIm(width/2,height,sx,lineEndY,espThickness,col.x,col.y,col.z);
@@ -260,7 +333,6 @@ void DesenharESP(int width, int height) {
                 DrawLineIm(width/2,0,sx,WorldEnemyHeadPos.Y+oy-(ESPNome?espTextSize+2:1)-(ESPHealthText?espTextSize+2:0),espThickness,col.x,col.y,col.z);
         }
 
-        // Box
         if (ESPCaixa == 1) {
             if (ESPFilledBox)
                 DrawRectFilledIm(bx+ox, by+oy, Width, Height, col.x*0.15f, col.y*0.15f, col.z*0.15f, 0.3f);
@@ -271,35 +343,35 @@ void DesenharESP(int width, int height) {
             DrawCornerBoxIm(bx+ox, by+oy, Width, Height, Width*0.25f, espThickness, colorBox[0], colorBox[1], colorBox[2]);
         }
 
-        // Health Bar (multi-posicao)
-        if (ESPHealthBarPos == 1) // Left
-            DrawHealthBarIm(bx+ox,by+oy,Width,Height,c.health,200);
-        else if (ESPHealthBarPos == 2) { // Right
+        // Health Bar
+        if (ESPHealthBarPos == 1)
+            DrawHealthBarIm(bx+ox,by+oy,Width,Height,health,200);
+        else if (ESPHealthBarPos == 2) {
             float barW = 4;
             float barX = bx + ox + Width + 2;
             auto* dl = ESP_DL();
             dl->AddRectFilled(ImVec2(barX, by+oy), ImVec2(barX + barW, by+oy + Height), IM_COL32(40, 40, 40, 130));
-            float pct = (float)c.health / 200.0f; if (pct < 0) pct = 0; if (pct > 1) pct = 1;
+            float pct = (float)health / 200.0f; if (pct < 0) pct = 0; if (pct > 1) pct = 1;
             if (pct > 0) {
                 float fillH = Height * pct;
                 ImU32 fillCol = pct <= 0.3f ? IM_COL32(255,50,50,255) : (pct <= 0.6f ? IM_COL32(255,255,50,255) : IM_COL32(50,255,50,255));
                 dl->AddRectFilled(ImVec2(barX+1, by+oy+Height-fillH), ImVec2(barX+barW-1, by+oy+Height), fillCol);
             }
-        } else if (ESPHealthBarPos == 3) { // Top
+        } else if (ESPHealthBarPos == 3) {
             float barH = 3;
             auto* dl = ESP_DL();
             dl->AddRectFilled(ImVec2(bx+ox, by+oy-barH-1), ImVec2(bx+ox+Width, by+oy-1), IM_COL32(40,40,40,130));
-            float pct = (float)c.health / 200.0f; if (pct < 0) pct = 0; if (pct > 1) pct = 1;
+            float pct = (float)health / 200.0f; if (pct < 0) pct = 0; if (pct > 1) pct = 1;
             if (pct > 0) {
                 float fillW = Width * pct;
                 ImU32 fillCol = pct <= 0.3f ? IM_COL32(255,50,50,255) : (pct <= 0.6f ? IM_COL32(255,255,50,255) : IM_COL32(50,255,50,255));
                 dl->AddRectFilled(ImVec2(bx+ox+1, by+oy-barH), ImVec2(bx+ox+fillW-1, by+oy-1), fillCol);
             }
-        } else if (ESPHealthBarPos == 4) { // Bottom
+        } else if (ESPHealthBarPos == 4) {
             float barH = 3;
             auto* dl = ESP_DL();
             dl->AddRectFilled(ImVec2(bx+ox, by+oy+Height+1), ImVec2(bx+ox+Width, by+oy+Height+barH+1), IM_COL32(40,40,40,130));
-            float pct = (float)c.health / 200.0f; if (pct < 0) pct = 0; if (pct > 1) pct = 1;
+            float pct = (float)health / 200.0f; if (pct < 0) pct = 0; if (pct > 1) pct = 1;
             if (pct > 0) {
                 float fillW = Width * pct;
                 ImU32 fillCol = pct <= 0.3f ? IM_COL32(255,50,50,255) : (pct <= 0.6f ? IM_COL32(255,255,50,255) : IM_COL32(50,255,50,255));
@@ -307,27 +379,49 @@ void DesenharESP(int width, int height) {
             }
         }
 
+        // Skeleton (via bone list)
         if (ESPEsqueleto) {
-            Vector3 bs[18];
-            int ok = 0;
-            for (int i=0;i<18;i++) {
-                Vector3 p = World2Screen(renderMatrix, c.boneWorld[i]);
-                if (p.Z!=0) { bs[i]=Vector3{0,0,1}; continue; }
-                bs[i]=p; ok++;
-            }
-            if (ok>=2) {
-                auto good = [&](int i){return bs[i].Z==0;};
-                auto ln = [&](int a,int b){if(good(a)&&good(b))DrawLineIm(bs[a].X+ox,bs[a].Y+oy,bs[b].X+ox,bs[b].Y+oy,espThickness,colorSkeleton[0],colorSkeleton[1],colorSkeleton[2]);};
-                ln(0,1); ln(1,2); ln(2,3);
-                ln(1,4); ln(4,5); ln(5,6); ln(6,7);
-                ln(1,8); ln(8,9); ln(9,10); ln(10,11);
-                ln(3,12); ln(12,13); ln(13,14);
-                ln(3,15); ln(15,16); ln(16,17);
+            static const uintptr_t maleBO[18] = {
+                string2Offset(AY_OBFUSCATE("0x38")),string2Offset(AY_OBFUSCATE("0x14")),string2Offset(AY_OBFUSCATE("0x10")),string2Offset(AY_OBFUSCATE("0x48")),
+                string2Offset(AY_OBFUSCATE("0x18")),string2Offset(AY_OBFUSCATE("0x1C")),string2Offset(AY_OBFUSCATE("0x20")),string2Offset(AY_OBFUSCATE("0x24")),
+                string2Offset(AY_OBFUSCATE("0x28")),string2Offset(AY_OBFUSCATE("0x2C")),string2Offset(AY_OBFUSCATE("0x30")),string2Offset(AY_OBFUSCATE("0x34")),
+                string2Offset(AY_OBFUSCATE("0x3C")),string2Offset(AY_OBFUSCATE("0x40")),string2Offset(AY_OBFUSCATE("0x44")),string2Offset(AY_OBFUSCATE("0x4C")),
+                string2Offset(AY_OBFUSCATE("0x50")),string2Offset(AY_OBFUSCATE("0x54"))
+            };
+            static const uintptr_t femaleBO[18] = {
+                string2Offset(AY_OBFUSCATE("0x3C")),string2Offset(AY_OBFUSCATE("0x18")),string2Offset(AY_OBFUSCATE("0x14")),string2Offset(AY_OBFUSCATE("0x10")),
+                string2Offset(AY_OBFUSCATE("0x1C")),string2Offset(AY_OBFUSCATE("0x20")),string2Offset(AY_OBFUSCATE("0x24")),string2Offset(AY_OBFUSCATE("0x28")),
+                string2Offset(AY_OBFUSCATE("0x2C")),string2Offset(AY_OBFUSCATE("0x30")),string2Offset(AY_OBFUSCATE("0x34")),string2Offset(AY_OBFUSCATE("0x38")),
+                string2Offset(AY_OBFUSCATE("0x40")),string2Offset(AY_OBFUSCATE("0x44")),string2Offset(AY_OBFUSCATE("0x48")),string2Offset(AY_OBFUSCATE("0x4C")),
+                string2Offset(AY_OBFUSCATE("0x50")),string2Offset(AY_OBFUSCATE("0x54"))
+            };
+            const uintptr_t* bo = garota ? femaleBO : maleBO;
+            uintptr_t aidOff = g_AutoAidDocApfka ? g_AutoAidDocApfka : Offsets::AIDDOCAPFKA;
+            uintptr_t listTrans = Ler<uintptr_t>(e + aidOff);
+            if (listTrans > 0x10000) {
+                Vector3 bones[18];
+                int ok = 0;
+                for (int j = 0; j < 18; j++) {
+                    Vector3 wpos = ObterOssos(e, bo[j]);
+                    if (wpos.X == 0 && wpos.Y == 0 && wpos.Z == 0) { bones[j] = Vector3{0,0,1}; continue; }
+                    Vector3 p = World2Screen(matrix, wpos);
+                    if (p.Z != 0) { bones[j] = Vector3{0,0,1}; continue; }
+                    bones[j] = p; ok++;
+                }
+                if (ok >= 2) {
+                    auto good = [&](int i){return bones[i].Z==0;};
+                    auto ln = [&](int a,int b){if(good(a)&&good(b))DrawLineIm(bones[a].X+ox,bones[a].Y+oy,bones[b].X+ox,bones[b].Y+oy,espThickness,colorSkeleton[0],colorSkeleton[1],colorSkeleton[2]);};
+                    ln(0,1); ln(1,2); ln(2,3);
+                    ln(1,4); ln(4,5); ln(5,6); ln(6,7);
+                    ln(1,8); ln(8,9); ln(9,10); ln(10,11);
+                    ln(3,12); ln(12,13); ln(13,14);
+                    ln(3,15); ln(15,16); ln(16,17);
+                }
             }
         }
 
         if (ESPDistancia) {
-            char buf[64]; snprintf(buf,sizeof(buf),"%.2fm",c.dist);
+            char buf[64]; snprintf(buf,sizeof(buf),"%.2fm",dist);
             float tw = ImGui::CalcTextSize(buf).x;
             float dx = WorldEnemyHeadPos.X+ox - tw*0.5f;
             float dy = by+oy + Height + 2;
@@ -337,42 +431,16 @@ void DesenharESP(int width, int height) {
         }
     }
 
-    } // lock_guard
-
     LockAim::SetTarget(AimbotTarget);
-    _0xW3X4Y5Z6::SetTarget(AimbotTarget);
 
-    // Enemy Counter
+
+    // Enemy Counter (toggle)
     if (ESPEnemyCounter) {
-        char ecBuf[64]; snprintf(ecBuf, sizeof(ecBuf), "Enemies: %d", entityCount);
-        float ecw = ImGui::CalcTextSize(ecBuf).x;
-        DrawRectFilledIm(width - ecw - 12, 8, ecw + 10, 26, 0,0,0,0.5f);
-        DrawTextShadowIm(ecBuf, width - ecw - 7, 10, 1,1,1, 14);
+        // already shown above
     }
 
-    // Watermark + Stream Mode indicator - SEMPRE VISIVEL
-    float wmX = 8;
-    if (StreamMode) {
-        const char* smText = AY_OBFUSCATE("SM ON");
-        float smW = ImGui::CalcTextSize(smText).x;
-        float smH = 26.0f;
-        DrawRectFilledIm(wmX, 8, smW + 12, smH, 0,0,0,0.5f);
-        DrawTextShadowIm(smText, wmX + 6, 10, 0.3f, 1.0f, 0.3f, 14);
-        wmX += smW + 18;
-    }
-    // Watermark sempre visivel
-    {
-        char wmBuf[128];
-        auto nowWM = std::chrono::steady_clock::now();
-        static auto wmStart = nowWM;
-        float wmSec = std::chrono::duration<float>(nowWM - wmStart).count();
-        int wmH = (int)(wmSec / 3600);
-        int wmM = ((int)wmSec % 3600) / 60;
-        int wmS = (int)wmSec % 60;
-        snprintf(wmBuf, sizeof(wmBuf), "Satella Private | %02d:%02d:%02d", wmH, wmM, wmS);
-        DrawRectFilledIm(wmX, 8, ImGui::CalcTextSize(wmBuf).x + 12, 26, 0,0,0,0.5f);
-        DrawTextShadowIm(wmBuf, wmX + 6, 10, 219/255.f, 0, 166/255.f, 14);
-    }
+
+
 }
 
 HWND FindRenderWindow(HWND fallback);
@@ -381,117 +449,68 @@ extern HWND hwnd;
 static void StopKellerETW();
 static void ClearPEBDebugFlags();
 
-void runRenderTick() {
-    eventPoll();
-    ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
+// ─── D3D11 Inline Overlay ───
+#include <d3d11.h>
+#include <dxgi.h>
+static IDXGISwapChain* g_pSwapChain = nullptr;
+static ID3D11Device* g_pd3dDevice = nullptr;
+static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;
+static bool g_D3D11Initialized = false;
+static WNDPROC g_OriginalWndProc = nullptr;
+typedef HRESULT(__stdcall* PresentFn)(IDXGISwapChain*, UINT, UINT);
+static PresentFn oPresent = nullptr;
 
-    // Quando menu fechado: janela transparente a cliques
-    static bool lastMenuVisible = false;
-    if (Auth.MenuVisible != lastMenuVisible) {
-        lastMenuVisible = Auth.MenuVisible;
-        if (hwnd) {
-            LONG exStyle = GetWindowLongA(hwnd, GWL_EXSTYLE);
-            if (Auth.MenuVisible) {
-                SetWindowLongA(hwnd, GWL_EXSTYLE, exStyle & ~WS_EX_TRANSPARENT);
-            } else {
-                SetWindowLongA(hwnd, GWL_EXSTYLE, exStyle | WS_EX_TRANSPARENT);
-            }
-        }
-    }
-
-    // --- MEMORY CHECK VERIFICATION --- disabled (crash no emulador)
-    // static int integrityCheckCounter = 0;
-    // integrityCheckCounter++;
-    // if (integrityCheckCounter % 30 == 0) {
-    //     MemoryIntegrity::VerifyIntegrity();
-    //     AdvancedEvasion::MaintainAdvancedEvasion();
-    //     integrityCheckCounter = 0;
-    // }
-
-    // Re-find target window if handle is stale
-    RECT wr = {0};
-    if (!IsWindow(hTargetWindow) || !GetWindowRect(hTargetWindow, &wr)) {
-        hTargetWindow = FindRenderWindow(NULL);
-    }
-
-    if (IsWindow(hTargetWindow) && GetWindowRect(hTargetWindow, &wr)) {
-        int cw = wr.right - wr.left, ch = wr.bottom - wr.top;
-        if (cw > 0 && ch > 0 && !IsIconic(hTargetWindow)) {
-            SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch,
-                SWP_NOACTIVATE | SWP_NOCOPYBITS);
-        }
-    }
-
-    // Anti-KG refresh periodico (~1x por segundo)
-    static DWORD lastGuardTick = 0;
-    DWORD now = GetTickCount();
-    if (now - lastGuardTick > 1000) {
-        lastGuardTick = now;
-        ClearPEBDebugFlags();
-        static const wchar_t* guardProcs[] = {
-            AY_OBFUSCATE(L"g.fix"), AY_OBFUSCATE(L"g_fix"), AY_OBFUSCATE(L"SatellaGate"), AY_OBFUSCATE(L"Phantom"), AY_OBFUSCATE(L"Keller"), AY_OBFUSCATE(L"DFIRemv"), AY_OBFUSCATE(L"PiadaGuard")
-        };
-        static auto _CreateToolhelp32Snapshot = (decltype(&CreateToolhelp32Snapshot))GetProcAddress(GetModuleHandleA("kernel32.dll"), "CreateToolhelp32Snapshot");
-        static auto _Process32FirstW = (decltype(&Process32FirstW))GetProcAddress(GetModuleHandleA("kernel32.dll"), "Process32FirstW");
-        static auto _Process32NextW = (decltype(&Process32NextW))GetProcAddress(GetModuleHandleA("kernel32.dll"), "Process32NextW");
-        static auto _OpenProcess = (decltype(&OpenProcess))GetProcAddress(GetModuleHandleA("kernel32.dll"), "OpenProcess");
-        static auto _TerminateProcess = (decltype(&TerminateProcess))GetProcAddress(GetModuleHandleA("kernel32.dll"), "TerminateProcess");
-        HANDLE gs = _CreateToolhelp32Snapshot ? _CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) : NULL;
-        if (_Process32FirstW && _Process32NextW && gs != INVALID_HANDLE_VALUE) {
-            PROCESSENTRY32W gp = { sizeof(gp) };
-            if (_Process32FirstW(gs, &gp)) do {
-                for (int gi = 0; gi < ARRAYSIZE(guardProcs); gi++) {
-                    if (wcsstr(gp.szExeFile, guardProcs[gi])) {
-                        HANDLE hk = _OpenProcess ? _OpenProcess(PROCESS_TERMINATE, FALSE, gp.th32ProcessID) : NULL;
-                        if (hk) { if (_TerminateProcess) _TerminateProcess(hk, 0); CloseHandle(hk); }
-                        break;
-                    }
-                }
-            } while (_Process32NextW(gs, &gp));
-            CloseHandle(gs);
-        }
-    }
-
-    ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
-
-    // ─── Stream Mode (F6) ───
-    if (GetAsyncKeyState(VK_F6) & 1) {
-        StreamMode = !StreamMode;
-        if (StreamMode) {
-            SetWindowDisplayAffinity(hwnd, 0x11);
-        } else {
-            SetWindowDisplayAffinity(hwnd, 0);
-        }
-    }
-    // F7 = Unload completo
-    if (GetAsyncKeyState(VK_F7) & 1) { UnloadCheat(); }
-    // F8 ou INSERT = Mostra/oculta overlay
-    if ((GetAsyncKeyState(VK_F8) & 1) || (GetAsyncKeyState(VK_INSERT) & 1)) {
-        Auth.MenuVisible = !Auth.MenuVisible;
-        Auth.OverlayView = true;
-        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-    }
-
-    // ─── Partículas (original) ───
-    struct Particle { float x, y, speed, size; };
-    static std::vector<Particle> particles;
-    static auto lastPartTick2 = std::chrono::steady_clock::now();
-    auto nowP = std::chrono::steady_clock::now();
-    float dt = std::chrono::duration<float>(nowP - lastPartTick2).count(); lastPartTick2 = nowP;
-    if (!PerformanceMode && particles.empty()) {
-        for (int i = 0; i < 40; i++) particles.push_back({static_cast<float>(rand() % 2000) / 2000.0f * 640, static_cast<float>(rand() % 2000) / 2000.0f * 460, 15 + static_cast<float>(rand() % 500) / 100, 0.5f + static_cast<float>(rand() % 100) / 200.0f});
-    }
-
+LRESULT CALLBACK GameWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     if (Auth.MenuVisible) {
-        static float AnimaTab = 0, Anima = 0;
-        static int LastCurrentTab = 0, LastCurrentSub = 0, CurrentSub = 0;
-        if (LastCurrentTab != CurrentTab) { AnimaTab = (LastCurrentTab > CurrentTab) ? -460.f : 460.f; LastCurrentTab = CurrentTab; }
-        AnimaTab = ImLerp(AnimaTab, 0.f, 8.f * ImGui::GetIO().DeltaTime);
-        if (LastCurrentSub != CurrentSub) { Anima = (LastCurrentSub > CurrentSub) ? -460.f : 460.f; LastCurrentSub = CurrentSub; }
-        Anima = ImLerp(Anima, 0.f, 8.f * ImGui::GetIO().DeltaTime);
+        if (ImGui_ImplWin32_WndProcHandler(hWnd, uMsg, wParam, lParam))
+            return true;
+    }
+    return CallWindowProc(g_OriginalWndProc, hWnd, uMsg, wParam, lParam);
+}
 
-        NotificationManager::DesenharNotificacoes();
-        if (CurrentWindow == 0) {
+HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT Flags) {
+    if (!g_D3D11Initialized) {
+        if (SUCCEEDED(pSwapChain->GetDevice(__uuidof(ID3D11Device), (void**)&g_pd3dDevice))) {
+            g_pd3dDevice->GetImmediateContext(&g_pd3dDeviceContext);
+            g_pSwapChain = pSwapChain;
+            ImGui_ImplDX11_Init(g_pd3dDevice, g_pd3dDeviceContext);
+            if (hTargetWindow && IsWindow(hTargetWindow)) {
+                g_OriginalWndProc = (WNDPROC)SetWindowLongPtrA(hTargetWindow, GWLP_WNDPROC, (LONG_PTR)GameWndProc);
+            }
+            g_D3D11Initialized = true;
+        }
+    }
+    if (g_D3D11Initialized) {
+        eventPoll();
+        ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
+        ImGui_ImplDX11_NewFrame();
+        ImGui_ImplWin32_NewFrame();
+        ImGui::NewFrame();
+
+        // Hotkeys
+        if (GetAsyncKeyState(VK_F6) & 1) { StreamMode = !StreamMode; if (hwnd) SetWindowDisplayAffinity(hwnd, StreamMode ? WDA_EXCLUDEFROMCAPTURE : 0x01); Auth.MenuVisible = !StreamMode; }
+        if (GetAsyncKeyState(VK_F8) & 1) { Auth.MenuVisible = !Auth.MenuVisible; Auth.OverlayView = true; }
+
+        // Particles
+        struct Particle { float x, y, speed, size; };
+        static std::vector<Particle> particles;
+        static auto lastPartTick2 = std::chrono::steady_clock::now();
+        auto nowP = std::chrono::steady_clock::now();
+        float dt = std::chrono::duration<float>(nowP - lastPartTick2).count(); lastPartTick2 = nowP;
+        if (!PerformanceMode && particles.empty()) {
+            for (int i = 0; i < 120; i++) particles.push_back({static_cast<float>(rand() % 2000) / 2000.0f * 640, static_cast<float>(rand() % 2000) / 2000.0f * 460, 15 + static_cast<float>(rand() % 500) / 100, 1.0f + static_cast<float>(rand() % 200) / 200.0f});
+        }
+
+        if (Auth.MenuVisible) {
+            static float AnimaTab = 0, Anima = 0;
+            static int LastCurrentTab = 0, LastCurrentSub = 0, CurrentSub = 0;
+            if (LastCurrentTab != CurrentTab) { AnimaTab = (LastCurrentTab > CurrentTab) ? -460.f : 460.f; LastCurrentTab = CurrentTab; }
+            AnimaTab = ImLerp(AnimaTab, 0.f, 14.f * ImGui::GetIO().DeltaTime);
+            if (LastCurrentSub != CurrentSub) { Anima = (LastCurrentSub > CurrentSub) ? -460.f : 460.f; LastCurrentSub = CurrentSub; }
+            Anima = ImLerp(Anima, 0.f, 14.f * ImGui::GetIO().DeltaTime);
+
+            NotificationManager::DesenharNotificacoes();
+            if (CurrentWindow == 0) {
             static bool loggingIn = false, REGing = false, regLoading = false;
             static char RegUser[256] = "", RegPass[256] = "", RegKey[256] = "";
 
@@ -512,7 +531,7 @@ void runRenderTick() {
                             Auth.Autenticado = true;
                             NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
                             std::thread(NetworkInit).detach();
-                            std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+                            std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xPrecision::Start(); LockAim::Start(); }).detach();
                         } else {
                             memset(Auth.Usuario, 0, sizeof(Auth.Usuario));
                             memset(Auth.Senha, 0, sizeof(Auth.Senha));
@@ -541,14 +560,14 @@ void runRenderTick() {
                         p.y -= p.speed * dt; p.x += sinf(p.y * 0.01f) * dt * 15;
                         if (p.y < -10) { p.y = sz.y + 10; p.x = static_cast<float>(rand() % 2000) / 2000.0f * sz.x; }
                         float a = (1 - (p.y / sz.y)) * 0.3f;
-                        dl->AddCircleFilled(ImVec2(pos.x + p.x, pos.y + p.y), p.size, IM_COL32(219, 0, 166, static_cast<int>(a * 255)), 6);
+                        dl->AddCircleFilled(ImVec2(pos.x + p.x, pos.y + p.y), p.size, IM_COL32(255, 255, 255, static_cast<int>(a * 255)), 6);
                     }
                 }
                 {
                     ImGui::PushFont(InterBold);
-                    const char* titulo = AY_OBFUSCATE("Satella Private");
+                    const char* titulo = AY_OBFUSCATE("satella internal");
                     ImVec2 ts = ImGui::CalcTextSize(titulo);
-                    dl->AddText(pos + ImVec2((sz.x - ts.x) * 0.5f, 14), ImColor(219, 0, 166), titulo);
+                    dl->AddText(pos + ImVec2((sz.x - ts.x) * 0.5f, 14), ImColor(255, 255, 255), titulo);
                     ImGui::PopFont();
                 }
 
@@ -574,12 +593,12 @@ void runRenderTick() {
                     ImGui::BeginDisabled(loggingIn);
                     if (loggingIn) {
                         ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 4));
-                        ImGui::TextColored(ImColor(219, 0, 166, 255), "Conectando ao servidor...");
+                        ImGui::TextColored(ImColor(255, 255, 255, 255), "Conectando ao servidor...");
                         ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 4));
                     }
-                    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(219, 0, 166, 220));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(240, 30, 190, 240));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(255, 60, 210, 255));
+                    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 220));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(255, 255, 255, 240));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(255, 255, 255, 255));
                     if (ImGui::Button("Entrar", ImVec2(inputW, btnH))) {
                         loggingIn = true;
                         if (strlen(Auth.Usuario) > 0 && strlen(Auth.Senha) > 0) {
@@ -593,7 +612,7 @@ void runRenderTick() {
                                     Auth.Autenticado = true;
 
                                     std::thread(NetworkInit).detach();
-                                    std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+                                    std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xPrecision::Start(); LockAim::Start(); }).detach();
                                 } else {
                                     const char* err = ka_get_error();
                                     NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no AUTH", 5.0f, true);
@@ -636,9 +655,9 @@ void runRenderTick() {
 
                     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, regLoading ? 0.5f : 1.0f);
                     ImGui::BeginDisabled(regLoading);
-                    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(219, 0, 166, 220));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(240, 30, 190, 240));
-                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(255, 60, 210, 255));
+                    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 220));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(255, 255, 255, 240));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(255, 255, 255, 255));
                     if (ImGui::Button("Registrar", ImVec2(inputW, btnH))) {
                         if (strlen(RegUser) > 0 && strlen(RegPass) > 0 && strlen(RegKey) > 0) {
                             regLoading = true;
@@ -683,7 +702,7 @@ void runRenderTick() {
             if (Auth.Autenticado && !g_AutoStarted) {
                 g_AutoStarted = true;
                 std::thread(NetworkInit).detach();
-                std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xW3X4Y5Z6::Start(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+                std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xPrecision::Start(); LockAim::Start(); }).detach();
             }
 
             JUNK(); AntiDebugCheck();
@@ -700,13 +719,13 @@ void runRenderTick() {
                         p.y -= p.speed * dt; p.x += sinf(p.y * 0.01f) * dt * 20;
                         if (p.y < -10) { p.y = sz.y + 10; p.x = static_cast<float>(rand() % 2000) / 2000.0f * sz.x; }
                         float a = (1 - (p.y / sz.y)) * 0.3f;
-                        dl->AddCircleFilled(ImVec2(pos.x + p.x, pos.y + p.y), p.size, IM_COL32(219, 0, 166, static_cast<int>(a * 255)), 6);
+                        dl->AddCircleFilled(ImVec2(pos.x + p.x, pos.y + p.y), p.size, IM_COL32(255, 255, 255, static_cast<int>(a * 255)), 6);
                     }
                 }
 
                 ImGui::PushFont(InterBold);
-                ImVec2 title_size = ImGui::CalcTextSize("Satella Private");
-                dl->AddText(pos + ImVec2((sz.x - title_size.x) / 2, 15), ImColor(219, 0, 166), "Satella Private");
+                ImVec2 title_size = ImGui::CalcTextSize("satella internal");
+                dl->AddText(pos + ImVec2((sz.x - title_size.x) / 2, 15), ImColor(255, 255, 255), "satella internal");
                 ImGui::PopFont();
 
                 static float AnimaTab = 0.0f;
@@ -715,7 +734,7 @@ void runRenderTick() {
                     AnimaTab = (LastCurrentTab > CurrentTab) ? -460.f : 460.f;
                     LastCurrentTab = CurrentTab;
                 }
-                AnimaTab = ImLerp(AnimaTab, 0.f, 6.f * ImGui::GetIO().DeltaTime);
+                AnimaTab = ImLerp(AnimaTab, 0.f, 14.f * ImGui::GetIO().DeltaTime);
 
                 float contentHeight = sz.y - 85.0f;
 
@@ -731,34 +750,23 @@ void runRenderTick() {
                             ImGui::SliderInt("Max Distance", &AimbotMaxDistance, 10, 500);
                             static const char* delayOpts[] = { "Instant", "235ms", "325ms", "415ms" };
                             ImGui::Combo("Delay", &AimbotPeitosIndex, delayOpts, IM_ARRAYSIZE(delayOpts));
-                            static const char* hitboxOpts[] = { "Head", "Body" };
-                            ImGui::Combo("Hitbox", &AimbotHitbox, hitboxOpts, IM_ARRAYSIZE(hitboxOpts));
-                            ImGui::Checkbox("Ignore Knocked", &AimbotIgnoreKnocked);
-                            ImGui::Checkbox("Ignore Bots", &AimbotIgnoreBots);
+                            ImGui::Checkbox("Knocked", &AimbotIgnoreKnocked);
+                            ImGui::Checkbox("Bots", &AimbotIgnoreBots);
+                            ImGui::Separator();
                         }
-                    }
+                        }
                     ImGui::EndCustomChild();
                     
                     ImGui::SetCursorPos(ImVec2(startX + 285, 65));
                     ImGui::CustomChild("Aimbot Extras", ImVec2(275, contentHeight));
                     {
-                        ImGui::Checkbox("Silent Aim", &AimSilent);
-                        if (AimSilent) {
-                            ImGui::KeyBind("Key", &SilentAimKeyBind, (int*)0);
-                            ImGui::SliderFloat("FOV", &SilentAimFOV, 1.0f, 180.0f, "%.0f");
-                            ImGui::SliderInt("Distance", &SilentAimDistance, 10, 500);
-                            static const char* hitboxOpts[] = { "Head", "Body" };
-                            ImGui::Combo("Hitbox", &SilentAimHitbox, hitboxOpts, IM_ARRAYSIZE(hitboxOpts));
-                            ImGui::Checkbox("Ignore Knocked", &SilentAimIgnoreKnocked);
-                            ImGui::Checkbox("Ignore Bots", &SilentAimIgnoreBots);
-                        }
                         ImGui::Separator();
                         ImGui::Checkbox("Precision", &PrecisionMode);
                         ImGui::Separator();
                         ImGui::Checkbox("No Recoil", &NoRecoilEnabled);
                     }
                     ImGui::EndCustomChild();
-                    
+
                 } else if (CurrentTab == 3) {
                     float startX = 35 + AnimaTab;
                     ImGui::SetCursorPos(ImVec2(startX, 65));
@@ -800,7 +808,6 @@ void runRenderTick() {
                         ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Display"); ImGui::PopFont();
                         ImGui::Separator();
                         ImGui::Checkbox("Enemy Counter", &ESPEnemyCounter);
-                        ImGui::Checkbox("Watermark", &Watermark);
                         ImGui::Separator();
                         ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Colors"); ImGui::PopFont();
                         ImGui::Separator();
@@ -834,7 +841,8 @@ void runRenderTick() {
                     {
                         ImGui::Checkbox("Weapon Attributes", &WeaponAttributesEnabled);
                         if (WeaponAttributesEnabled) {
-                            ImGui::Combo("Level", &WeaponAttributesLevel, "Lv 1 (+8%)\0Lv 2 (+16%)\0Lv 3 (+26%)\0Lv 4 (+35%)\0");
+                            static const char* waLevels[] = { "Max Lv 1", "Max Lv 2", "Max Lv 3", "Max Lv 4" };
+                            ImGui::Combo("Level", &WeaponAttributesLevel, waLevels, IM_ARRAYSIZE(waLevels));
                         }
                         ImGui::Separator();
                         ImGui::Checkbox("Spinbot", &SpinBot);
@@ -848,24 +856,10 @@ void runRenderTick() {
                     ImGui::SetCursorPos(ImVec2(startX + 285, 65));
                     ImGui::CustomChild("Extra", ImVec2(275, contentHeight));
                     {
-                        // AOB Patches
-                        ImGui::Checkbox("Pixel Estendido", &PatchPixelEstendido);
-                        ImGui::Checkbox("Visao 10X", &PatchVisao10X);
-                        ImGui::Checkbox("No Recoil (AOB)", &PatchNoRecoilAOB);
-                        ImGui::Checkbox("FOV 360", &PatchFOV360);
-                        ImGui::Checkbox("Bala Infinita", &PatchBalaInfinita);
-                        ImGui::Checkbox("Wall Hack", &PatchWallHack);
-                        ImGui::Checkbox("Speed Hack", &PatchSpeedHack);
-                        ImGui::Checkbox("Camera Left", &PatchCameraLeft);
-                        ImGui::Checkbox("2X Tracking", &PatchTracking2X);
-                        ImGui::Separator();
-                        ImGui::Checkbox("Aimbot Drag", &PatchAimbotDrag);
-                        ImGui::Checkbox("Wallhack 2", &PatchWallhack2);
-                        ImGui::Checkbox("Wallhack 3", &PatchWallhack3);
                     }
                     ImGui::EndCustomChild();
                     ImGui::EndGroup();
-                    
+
                 } else if (CurrentTab == 5) {
                     float startX = 35 + AnimaTab;
                     ImGui::SetCursorPos(ImVec2(startX, 65));
@@ -877,7 +871,7 @@ void runRenderTick() {
                         ImGui::Separator();
                         ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(180, 40, 50, 200));
                         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(210, 50, 60, 230));
-                        if (ImGui::Button("UNLOAD (F7)", ImVec2(-1, 38))) { UnloadCheat(); }
+                        if (ImGui::Button("Bypass", ImVec2(-1, 38))) { UnloadCheat(); g_Unload = true; }
                         if (!Auth.Attached && Auth.Autenticado) {
                             ImGui::SameLine();
                             if (ImGui::Button("Reconectar", ImVec2(-1, 38))) {
@@ -891,7 +885,7 @@ void runRenderTick() {
                     ImGui::SetCursorPos(ImVec2(startX + 285, 65));
                     ImGui::CustomChild("Info", ImVec2(275, contentHeight));
                     {
-                        ImGui::TextDisabled("Satella Private");
+                        ImGui::TextDisabled("satella internal");
                         ImGui::TextDisabled("Build: v7a");
                         ImGui::Separator();
                         if (Auth.Attached)
@@ -931,36 +925,593 @@ void runRenderTick() {
     SaveKeyBinds();
 
     // -- Weapon Attributes --
-    if (Auth.Attached && cachedLocalPlayer && cachedLocalPlayer < 0x100000000ULL) {
-        WeaponAttributes::Apply(static_cast<uint32_t>(cachedLocalPlayer), WeaponAttributesLevel, WeaponAttributesEnabled);
+    { uint64_t lp = ReadLocalPlayer();
+    if (Auth.Attached && lp) {
+        WeaponAttributes::Apply(static_cast<uint32_t>(lp), WeaponAttributesLevel, WeaponAttributesEnabled);
+    }}
+
+    // Stream Mode enforcement (every frame)
+    if (hwnd) {
+        SetWindowDisplayAffinity(hwnd, StreamMode ? WDA_EXCLUDEFROMCAPTURE : 0x01);
     }
 
     // No Recoil (thread)
     if (Auth.Attached) Exploit::NoRecoil::Work();
-
-    // AOB Patches (aplica quando toggle liga)
-    if (Auth.Attached && cachedLocalPlayer) AplicarPatchesAOB();
-
+    // AOB Pixel Estendido
+    { if (Auth.Attached && il2cpp && il2cppSize) AplicarPatchesAOB(); }
     // Spinbot
-    if (Auth.Attached && cachedLocalPlayer) {
-        SpinbotImpl::Execute(cachedLocalPlayer);
+    { uint64_t lp = ReadLocalPlayer();
+    if (Auth.Attached && lp) SpinbotImpl::Execute(lp); }
+    // Rage Aimbot
+    if (Auth.Attached && RageAimEnabled) {
+        // Aim::RageAimbot::Aimbot(); // disabled - crash on match enter
     }
-
-    // -- AimLock (target tracking) --
 
     ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
     ImGui::Begin("##ESPWindow", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus);
     DesenharESP(static_cast<int>(ImGui::GetIO().DisplaySize.x), static_cast<int>(ImGui::GetIO().DisplaySize.y));
 
-    // Indicador de overlay ativo - quadrado vermelho no centro
-    {
-        float cx = ImGui::GetIO().DisplaySize.x * 0.5f;
-        float cy = ImGui::GetIO().DisplaySize.y * 0.5f;
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(ImVec2(cx - 20, cy - 20), ImVec2(cx + 20, cy + 20), IM_COL32(255, 0, 0, 200));
-        dl->AddRect(ImVec2(cx - 20, cy - 20), ImVec2(cx + 20, cy + 20), IM_COL32(255, 255, 255, 255), 0, 0, 2.0f);
+    ImGui::End();
+
+    ImGui::EndFrame(); ImGui::Render();
+    ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
     }
+    return oPresent(pSwapChain, SyncInterval, Flags);
+} // fim hkPresent
+
+void runRenderTick() {
+    // ── GDI mode ──
+    eventPoll();
+    ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
+
+    RECT wr = {0};
+    static RECT lastWr = {0};
+    if (!IsWindow(hTargetWindow) || !GetWindowRect(hTargetWindow, &wr)) hTargetWindow = FindRenderWindow(NULL);
+    if (IsWindow(hTargetWindow) && GetWindowRect(hTargetWindow, &wr)) {
+        int cw = wr.right - wr.left, ch = wr.bottom - wr.top;
+        if (cw > 0 && ch > 0 && !IsIconic(hTargetWindow)) {
+            if (wr.left != lastWr.left || wr.top != lastWr.top || cw != (lastWr.right - lastWr.left) || ch != (lastWr.bottom - lastWr.top)) {
+                lastWr = wr;
+                SetWindowPos(hwnd, HWND_TOPMOST, wr.left, wr.top, cw, ch, SWP_NOACTIVATE | SWP_NOCOPYBITS);
+            }
+        }
+    }
+
+    // Anti-KG guard
+    static DWORD lastGuardTick = 0;
+    DWORD now = GetTickCount();
+    if (now - lastGuardTick > 1000) {
+        lastGuardTick = now;
+        ClearPEBDebugFlags();
+    }
+
+    ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
+
+    DetectAndSetOffsets();
+
+    // F5 = Dump offsets
+    if (GetAsyncKeyState(VK_F5) & 1) {
+        char dumpPath[MAX_PATH] = {};
+        GetTempPathA(MAX_PATH, dumpPath);
+        strcat_s(dumpPath, "satella_offsets.txt");
+        FILE* df = nullptr;
+        fopen_s(&df, dumpPath, "w");
+        if (!df) { strcpy_s(dumpPath, "satella_offsets.txt"); fopen_s(&df, dumpPath, "w"); }
+        if (df) {
+            time_t t = time(nullptr);
+            fprintf(df, "=== Satella Offset Dump ===\n");
+            fprintf(df, "Time: %s", ctime(&t));
+            fprintf(df, "PID: %d\n", GetCurrentProcessId());
+            fprintf(df, "il2cpp base: 0x%llX\n", (uint64_t)il2cpp);
+            fprintf(df, "il2cpp size: 0x%llX\n", (uint64_t)il2cppSize);
+            fprintf(df, "libunity base: 0x%llX\n", (uint64_t)libunity);
+            fprintf(df, "VMM.pVM: 0x%p\n", VMM.pVM);
+            fprintf(df, "GuestCR3: 0x%llX\n", VMM.GuestCR3);
+            fprintf(df, "BstkVMM: 0x%p\n", (void*)GetModuleHandleA("BstkVMM.dll"));
+            if (il2cpp) {
+                uint32_t basePtr = Ler<uint32_t>(il2cpp + 0x9EC1C48);
+                fprintf(df, "il2cpp[0x9EC1C48] (InitBase): 0x%X\n", basePtr);
+                if (basePtr > 0x10000) {
+                    uint32_t facade = Ler<uint32_t>(basePtr);
+                    fprintf(df, "  [basePtr]: 0x%X\n", facade);
+                    if (facade > 0x10000) {
+                        uint32_t sf = Ler<uint32_t>(facade + 0x5C);
+                        fprintf(df, "  [facade+0x5C] (StaticClass): 0x%X\n", sf);
+                        if (sf > 0x10000) {
+                            uint32_t eng = Ler<uint32_t>(sf);
+                            fprintf(df, "  Engine instance: 0x%X\n", eng);
+                            if (eng > 0x10000) {
+                                fprintf(df, "  Engine[0x50] (CurrentMatch): 0x%X\n", Ler<uint32_t>(eng + 0x50));
+                                fprintf(df, "  Engine[0x68] (DictEntities): 0x%X\n", Ler<uint32_t>(eng + 0x68));
+                                uint32_t match = Ler<uint32_t>(eng + 0x50);
+                                if (match > 0x10000) {
+                                    fprintf(df, "  Match[0x94] (LocalPlayer): 0x%X\n", Ler<uint32_t>(match + 0x94));
+                                    fprintf(df, "  Match[0x8C] (Status): %d\n", Ler<int>(match + 0x8C));
+                                }
+                            }
+                        }
+                    }
+                }
+                // Scan for InitBase - try nearby offsets
+                fprintf(df, "\n--- InitBase scan ---\n");
+                for (uint32_t off = 0x9EC1C00; off < 0x9EC2000; off += 4) {
+                    uint32_t val = Ler<uint32_t>(il2cpp + off);
+                    if (val > 0x10000000 && val < 0x80000000) {
+                        fprintf(df, "  il2cpp+0x%X = 0x%X", off, val);
+                        uint32_t f2 = Ler<uint32_t>(val);
+                        if (f2 > 0x10000) {
+                            uint32_t f3 = Ler<uint32_t>(f2 + 0x5C);
+                            if (f3 > 0x10000) {
+                                uint32_t f4 = Ler<uint32_t>(f3);
+                                if (f4 > 0x10000)
+                                    fprintf(df, " -> ENGINE INSTANCE 0x%X", f4);
+                            }
+                        }
+                        fprintf(df, "\n");
+                    }
+                }
+                fprintf(df, "\n--- Auto-detected offsets ---\n");
+                fprintf(df, "  MainTransform: 0x%X\n", (uint32_t)Offsets::MainTransform);
+                fprintf(df, "  AIDDOCAPFKA: 0x%X\n", (uint32_t)Offsets::AIDDOCAPFKA);
+                fprintf(df, "  CDOBMFNCJHD: 0x%X\n", (uint32_t)Offsets::CDOBMFNCJHD);
+            }
+            fclose(df);
+            char msg[512];
+            sprintf_s(msg, "Offsets dumpado em: %s", dumpPath);
+            NotificationManager::AdicionarNotificacao(msg, 8.0f);
+        }
+    }
+    if (GetAsyncKeyState(VK_F6) & 1) { StreamMode = !StreamMode; if (hwnd) SetWindowDisplayAffinity(hwnd, StreamMode ? WDA_EXCLUDEFROMCAPTURE : 0x01); Auth.MenuVisible = !StreamMode; }
+    if (GetAsyncKeyState(VK_F8) & 1) { Auth.MenuVisible = !Auth.MenuVisible; Auth.OverlayView = true; if (hwnd) SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE); }
+
+    // Particles
+    struct Particle { float x, y, speed, size; };
+    static std::vector<Particle> particles;
+    static auto lastPartTick2 = std::chrono::steady_clock::now();
+    auto nowP = std::chrono::steady_clock::now();
+    float dt = std::chrono::duration<float>(nowP - lastPartTick2).count(); lastPartTick2 = nowP;
+    if (!PerformanceMode && particles.empty()) {
+        for (int i = 0; i < 120; i++) particles.push_back({static_cast<float>(rand() % 2000) / 2000.0f * 640, static_cast<float>(rand() % 2000) / 2000.0f * 460, 15 + static_cast<float>(rand() % 500) / 100, 1.0f + static_cast<float>(rand() % 200) / 200.0f});
+    }
+
+    if (Auth.MenuVisible) {
+        static float AnimaTab = 0, Anima = 0;
+        static int LastCurrentTab = 0, LastCurrentSub = 0, CurrentSub = 0;
+            if (LastCurrentTab != CurrentTab) { AnimaTab = (LastCurrentTab > CurrentTab) ? -460.f : 460.f; LastCurrentTab = CurrentTab; }
+            AnimaTab = ImLerp(AnimaTab, 0.f, 14.f * ImGui::GetIO().DeltaTime);
+            if (LastCurrentSub != CurrentSub) { Anima = (LastCurrentSub > CurrentSub) ? -460.f : 460.f; LastCurrentSub = CurrentSub; }
+            Anima = ImLerp(Anima, 0.f, 14.f * ImGui::GetIO().DeltaTime);
+        NotificationManager::DesenharNotificacoes();
+        if (CurrentWindow == 0) {
+        static bool loggingIn = false, REGing = false, regLoading = false;
+        static char RegUser[256] = "", RegPass[256] = "", RegKey[256] = "";
+        static bool autoTried = false;
+        if (!autoTried && !Auth.Autenticado && strlen(Auth.Usuario) == 0) {
+            autoTried = true;
+            char savedUser[256] = "", savedPass[256] = "";
+            if (load_credentials(savedUser, 256, savedPass, 256)) {
+                strcpy(Auth.Usuario, savedUser);
+                strcpy(Auth.Senha, savedPass);
+                loggingIn = true;
+                std::thread([=]() {
+                    bool ok = ka_init() && ka_login(Auth.Usuario, Auth.Senha);
+                    loggingIn = false;
+                    if (ok) {
+                        CurrentWindow = 1; CurrentTab = 2;
+                        Auth.Autenticado = true;
+                        NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
+                        std::thread(NetworkInit).detach();
+                        std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+                    } else {
+                        memset(Auth.Usuario, 0, sizeof(Auth.Usuario));
+                        memset(Auth.Senha, 0, sizeof(Auth.Senha));
+                        NotificationManager::AdicionarNotificacao("Auto-login falhou, faca login manual", 5.0f, true);
+                    }
+                }).detach();
+            }
+        }
+        const float winW = 560, winH = 380;
+        const float padX = 40;
+        const float inputW = winW - padX * 2;
+        const float btnH = 38;
+
+        JUNK(); AntiDebugCheck();
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 10));
+        ImGui::SetNextWindowSize(ImVec2(winW, winH));
+        ImGui::SetNextWindowPos(ImVec2((ImGui::GetIO().DisplaySize.x - winW) * 0.5f, (ImGui::GetIO().DisplaySize.y - winH) * 0.5f), ImGuiCond_Always);
+        ImGui::Begin(AY_OBFUSCATE("Satella"), nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+        {
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImVec2 pos = ImGui::GetWindowPos(), sz = ImGui::GetWindowSize();
+
+            dl->AddRectFilled(pos, pos + sz, IM_COL32(0, 0, 0, 255), 12.0f);
+            if (!PerformanceMode) {
+                for (auto& p : particles) {
+                    p.y -= p.speed * dt; p.x += sinf(p.y * 0.01f) * dt * 15;
+                    if (p.y < -10) { p.y = sz.y + 10; p.x = static_cast<float>(rand() % 2000) / 2000.0f * sz.x; }
+                    float a = (1 - (p.y / sz.y)) * 0.3f;
+                    dl->AddCircleFilled(ImVec2(pos.x + p.x, pos.y + p.y), p.size, IM_COL32(255, 255, 255, static_cast<int>(a * 255)), 6);
+                }
+            }
+            {
+                ImGui::PushFont(InterBold);
+                const char* titulo = AY_OBFUSCATE("satella internal");
+                ImVec2 ts = ImGui::CalcTextSize(titulo);
+                dl->AddText(pos + ImVec2((sz.x - ts.x) * 0.5f, 14), ImColor(255, 255, 255), titulo);
+                ImGui::PopFont();
+            }
+
+            ImGui::PushFont(InterRegular);
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.15f, 0.15f, 0.18f, 0.45f));
+
+            float curY = 55;
+            if (!REGing) {
+                ImGui::SetCursorPos(ImVec2(padX, curY));
+                ImGui::TextColored(ImColor(160, 160, 165, 200), "Username");
+                ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 4));
+                ImGui::SetNextItemWidth(inputW); ImGui::InputTextWithHint("##user", "Username", Auth.Usuario, IM_ARRAYSIZE(Auth.Usuario));
+
+                ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 10));
+                ImGui::TextColored(ImColor(160, 160, 165, 200), "Password");
+                ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 4));
+                ImGui::SetNextItemWidth(inputW); ImGui::InputTextWithHint("##pass", "Password", Auth.Senha, IM_ARRAYSIZE(Auth.Senha), ImGuiInputTextFlags_Password);
+
+                ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 18));
+
+                ImGui::PushStyleVar(ImGuiStyleVar_Alpha, loggingIn ? 0.5f : 1.0f);
+                ImGui::BeginDisabled(loggingIn);
+                if (loggingIn) {
+                    ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 4));
+                    ImGui::TextColored(ImColor(255, 255, 255, 255), "Conectando ao servidor...");
+                    ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 4));
+                }
+                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 220));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(255, 255, 255, 240));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(255, 255, 255, 255));
+                if (ImGui::Button("Entrar", ImVec2(inputW, btnH))) {
+                    loggingIn = true;
+                    if (strlen(Auth.Usuario) > 0 && strlen(Auth.Senha) > 0) {
+                        std::thread([=]() {
+                            bool ok = ka_init() && ka_login(Auth.Usuario, Auth.Senha);
+                            loggingIn = false;
+                            if (ok) {
+                                save_credentials(Auth.Usuario, Auth.Senha);
+                                NotificationManager::AdicionarNotificacao("Bem-Vindo, " + std::string(Auth.Usuario) + "!");
+                                CurrentWindow = 1; CurrentTab = 2;
+                                Auth.Autenticado = true;
+                                std::thread(NetworkInit).detach();
+                                std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+                            } else {
+                                const char* err = ka_get_error();
+                                NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no AUTH", 5.0f, true);
+                            }
+                        }).detach();
+                    } else {
+                        loggingIn = false;
+                        NotificationManager::AdicionarNotificacao("Preencha usuario e senha", 5.0f, true);
+                    }
+                }
+                ImGui::PopStyleColor(3);
+                ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 6));
+                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(60, 60, 70, 220));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(80, 80, 90, 240));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(100, 100, 110, 255));
+                if (ImGui::Button("Registrar", ImVec2(inputW, btnH))) {
+                    REGing = true;
+                }
+                ImGui::PopStyleColor(3);
+                ImGui::EndDisabled();
+                ImGui::PopStyleVar();
+            } else {
+                ImGui::SetCursorPos(ImVec2(padX, curY));
+                ImGui::TextColored(ImColor(160, 160, 165, 200), "Username");
+                ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 4));
+                ImGui::SetNextItemWidth(inputW); ImGui::InputTextWithHint("##reguser", "Username", RegUser, IM_ARRAYSIZE(RegUser));
+
+                ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 10));
+                ImGui::TextColored(ImColor(160, 160, 165, 200), "Password");
+                ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 4));
+                ImGui::SetNextItemWidth(inputW); ImGui::InputTextWithHint("##regpass", "Password", RegPass, IM_ARRAYSIZE(RegPass), ImGuiInputTextFlags_Password);
+
+                ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 10));
+                ImGui::TextColored(ImColor(160, 160, 165, 200), "License Key");
+                ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 4));
+                ImGui::SetNextItemWidth(inputW); ImGui::InputTextWithHint("##regkey", "XXXXX-XXXXX-XXXXX", RegKey, IM_ARRAYSIZE(RegKey));
+
+                ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 14));
+
+                ImGui::PushStyleVar(ImGuiStyleVar_Alpha, regLoading ? 0.5f : 1.0f);
+                ImGui::BeginDisabled(regLoading);
+                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(255, 255, 255, 220));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(255, 255, 255, 240));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(255, 255, 255, 255));
+                if (ImGui::Button("Registrar", ImVec2(inputW, btnH))) {
+                    if (strlen(RegUser) > 0 && strlen(RegPass) > 0 && strlen(RegKey) > 0) {
+                        regLoading = true;
+                        std::thread([=]() {
+                            bool ok = ka_init() && ka_register(RegUser, RegPass, RegKey);
+                            regLoading = false;
+                            if (ok) {
+                                NotificationManager::AdicionarNotificacao("Conta criada! Faca AUTH.");
+                                strcpy(Auth.Usuario, RegUser);
+                                strcpy(Auth.Senha, RegPass);
+                                memset(RegUser,0,sizeof(RegUser)); memset(RegPass,0,sizeof(RegPass)); memset(RegKey,0,sizeof(RegKey));
+                                REGing = false;
+                            } else {
+                                const char* err = ka_get_error();
+                                NotificationManager::AdicionarNotificacao(err && err[0] ? err : "Falha no registro", 5.0f, true);
+                            }
+                        }).detach();
+                    } else {
+                        NotificationManager::AdicionarNotificacao("Preencha todos os campos", 5.0f, true);
+                    }
+                }
+                ImGui::PopStyleColor(3);
+                ImGui::SetCursorPos(ImVec2(padX, ImGui::GetCursorPosY() + 6));
+                ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(60, 60, 70, 220));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(80, 80, 90, 240));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, IM_COL32(100, 100, 110, 255));
+                if (ImGui::Button("Voltar", ImVec2(inputW, btnH))) {
+                    REGing = false;
+                }
+                ImGui::PopStyleColor(3);
+                ImGui::EndDisabled();
+                ImGui::PopStyleVar();
+            }
+
+            ImGui::PopStyleColor();
+            ImGui::PopFont();
+        }
+        ImGui::End();
+        ImGui::PopStyleVar();
+        } else if (CurrentWindow == 1) {
+        static bool g_AutoStarted = false;
+        if (Auth.Autenticado && !g_AutoStarted) {
+            g_AutoStarted = true;
+            std::thread(NetworkInit).detach();
+            std::thread([]() { Sleep(2000); LoadLibraryAndHook(); _0xPrecision::Start(); LockAim::Start(); }).detach();
+        }
+
+        JUNK(); AntiDebugCheck();
+        ImGui::SetNextWindowSize(ImVec2(640, 440));
+        ImGui::Begin("Satella", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoTitleBar);
+        {
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            ImVec2 pos = ImGui::GetWindowPos(), sz = ImGui::GetWindowSize();
+
+            dl->AddRectFilled(pos, pos + sz, IM_COL32(0, 0, 0, 255), 12.0f);
+
+            if (!PerformanceMode) {
+                for (auto& p : particles) {
+                    p.y -= p.speed * dt; p.x += sinf(p.y * 0.01f) * dt * 20;
+                    if (p.y < -10) { p.y = sz.y + 10; p.x = static_cast<float>(rand() % 2000) / 2000.0f * sz.x; }
+                    float a = (1 - (p.y / sz.y)) * 0.3f;
+                    dl->AddCircleFilled(ImVec2(pos.x + p.x, pos.y + p.y), p.size, IM_COL32(255, 255, 255, static_cast<int>(a * 255)), 6);
+                }
+            }
+
+            ImGui::PushFont(InterBold);
+            ImVec2 title_size = ImGui::CalcTextSize("satella internal");
+            dl->AddText(pos + ImVec2((sz.x - title_size.x) / 2, 15), ImColor(255, 255, 255), "satella internal");
+            ImGui::PopFont();
+
+            static float AnimaTab = 0.0f;
+            static int LastCurrentTab = 2;
+            if (LastCurrentTab != CurrentTab) {
+                AnimaTab = (LastCurrentTab > CurrentTab) ? -460.f : 460.f;
+                LastCurrentTab = CurrentTab;
+            }
+            AnimaTab = ImLerp(AnimaTab, 0.f, 14.f * ImGui::GetIO().DeltaTime);
+
+            float contentHeight = sz.y - 85.0f;
+
+            if (CurrentTab == 2) {
+                float startX = 35 + AnimaTab;
+                ImGui::SetCursorPos(ImVec2(startX, 65));
+                ImGui::CustomChild("Aimbot Normal", ImVec2(275, contentHeight));
+                {
+                    ImGui::Checkbox("Aimbot", &AimbotLegit);
+                    if (AimbotLegit) {
+                        ImGui::KeyBind("Key", &AimbotKeyBind, (int*)0);
+                        ImGui::SliderInt("FOV", &AimbotFOV, 10, 500);
+                        ImGui::SliderInt("Max Distance", &AimbotMaxDistance, 10, 500);
+                        static const char* delayOpts[] = { "Instant", "235ms", "325ms", "415ms" };
+                        ImGui::Combo("Delay", &AimbotPeitosIndex, delayOpts, IM_ARRAYSIZE(delayOpts));
+                        ImGui::Checkbox("Knocked", &AimbotIgnoreKnocked);
+                        ImGui::Checkbox("Bots", &AimbotIgnoreBots);
+                        ImGui::Separator();
+                    }
+                }
+                ImGui::EndCustomChild();
+
+                ImGui::SetCursorPos(ImVec2(startX + 285, 65));
+                ImGui::CustomChild("Aimbot Extras", ImVec2(275, contentHeight));
+                {
+                    ImGui::Separator();
+                    ImGui::Checkbox("Precision", &PrecisionMode);
+                    ImGui::Separator();
+                    ImGui::Checkbox("No Recoil", &NoRecoilEnabled);
+                }
+                ImGui::EndCustomChild();
+
+            } else if (CurrentTab == 3) {
+                float startX = 35 + AnimaTab;
+                ImGui::SetCursorPos(ImVec2(startX, 65));
+                ImGui::CustomChild("ESP Features", ImVec2(275, contentHeight));
+                {
+                    ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Player"); ImGui::PopFont();
+                    ImGui::Separator();
+                    ImGui::Combo("Box Type", &ESPCaixa, "Off\0Full\0Cornered\0");
+                    if (ESPCaixa > 0) {
+                        ImGui::Checkbox("Filled Box", &ESPFilledBox);
+                    }
+                    ImGui::Checkbox("Skeleton", &ESPEsqueleto);
+                    ImGui::Checkbox("Name", &ESPNome);
+                    ImGui::Separator();
+                    ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Info"); ImGui::PopFont();
+                    ImGui::Separator();
+                    ImGui::Checkbox("Health Text", &ESPHealthText);
+                    ImGui::Combo("Health Bar", &ESPHealthBarPos, "Off\0Left\0Right\0Top\0Bottom\0");
+                    ImGui::Checkbox("Distance", &ESPDistancia);
+                    ImGui::Checkbox("Weapon Name", &ESPWeaponName);
+                    ImGui::Separator();
+                    ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Visibility"); ImGui::PopFont();
+                    ImGui::Separator();
+                    ImGui::Checkbox("Show Teammates", &ESPMostrarTime);
+                    ImGui::Checkbox("Show Knocked", &ESPMostrarDerrubado);
+                }
+                ImGui::EndCustomChild();
+
+                ImGui::SetCursorPos(ImVec2(startX + 285, 65));
+                ImGui::CustomChild("ESP Visuals", ImVec2(275, contentHeight));
+                {
+                    ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Effects"); ImGui::PopFont();
+                    ImGui::Separator();
+                    ImGui::Checkbox("Snap Lines", &ESPLinha);
+                    if (ESPLinha) {
+                        ImGui::Combo("Line From", &linePosition, "Ground\0Top\0");
+                    }
+                    ImGui::Separator();
+                    ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Display"); ImGui::PopFont();
+                    ImGui::Separator();
+                    ImGui::Checkbox("Enemy Counter", &ESPEnemyCounter);
+                    ImGui::Separator();
+                    ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Colors"); ImGui::PopFont();
+                    ImGui::Separator();
+                    ImGui::ColorEdit4("Box", colorBox, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+                    ImGui::SameLine(); ImGui::Text(" Box");
+                    ImGui::ColorEdit4("Skeleton", colorSkeleton, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+                    ImGui::SameLine(); ImGui::Text(" Skeleton");
+                    ImGui::ColorEdit4("Line", colorLine, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+                    ImGui::SameLine(); ImGui::Text(" Line");
+                    ImGui::ColorEdit4("Name", colorName, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+                    ImGui::SameLine(); ImGui::Text(" Name");
+                    ImGui::ColorEdit4("Distance", colorDistance, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+                    ImGui::SameLine(); ImGui::Text(" Distance");
+                    ImGui::ColorEdit4("Dying", colorDying, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+                    ImGui::SameLine(); ImGui::Text(" Dying");
+                    ImGui::Separator();
+                    ImGui::PushFont(InterBold); ImGui::TextColored(ImVec4(219/255.f,0,166/255.f,1), "Sizes"); ImGui::PopFont();
+                    ImGui::Separator();
+                    ImGui::SliderFloat("Text Size", &espTextSize, 8.0f, 24.0f, "%.0fpx");
+                    ImGui::SliderFloat("Line Thick", &espThickness, 0.5f, 4.0f, "%.1f");
+                    ImGui::SliderFloat("Max Dist", &espMaxDistance, 50.0f, 1000.0f, "%.0f");
+                    ImGui::SliderFloat("BG Alpha", &espBgAlpha, 0.0f, 0.5f, "%.2f");
+                }
+                ImGui::EndCustomChild();
+
+            } else if (CurrentTab == 4) {
+                float startX = 35 + AnimaTab;
+                ImGui::SetCursorPos(ImVec2(startX, 65));
+                ImGui::BeginGroup();
+                ImGui::CustomChild("Weapons", ImVec2(275, contentHeight));
+                {
+                    ImGui::Checkbox("Weapon Attributes", &WeaponAttributesEnabled);
+                    if (WeaponAttributesEnabled) {
+                        static const char* waLevels[] = { "Max Lv 1", "Max Lv 2", "Max Lv 3", "Max Lv 4" };
+                        ImGui::Combo("Level", &WeaponAttributesLevel, waLevels, IM_ARRAYSIZE(waLevels));
+                    }
+                    ImGui::Separator();
+                    ImGui::Checkbox("Spinbot", &SpinBot);
+                    if (SpinBot) {
+                        ImGui::Combo("Mode", &SpinbotMode, "Continuous\0Random\045\xc2\xb0 Step\0");
+                        ImGui::SliderFloat("Speed", &SpinbotSpeed, 1.0f, 30.0f, "%.0f");
+                    }
+                }
+                ImGui::EndCustomChild();
+
+                ImGui::SetCursorPos(ImVec2(startX + 285, 65));
+                ImGui::CustomChild("Extra", ImVec2(275, contentHeight));
+                {
+                }
+                ImGui::EndCustomChild();
+                ImGui::EndGroup();
+
+            } else if (CurrentTab == 5) {
+                float startX = 35 + AnimaTab;
+                ImGui::SetCursorPos(ImVec2(startX, 65));
+                ImGui::BeginGroup();
+                ImGui::CustomChild("Settings", ImVec2(275, contentHeight));
+                {
+                    ImGui::Checkbox("Stream Mode", &StreamMode);
+                    ImGui::Checkbox("Performance Mode", &PerformanceMode);
+                    ImGui::Separator();
+                    ImGui::PushStyleColor(ImGuiCol_Button, IM_COL32(180, 40, 50, 200));
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, IM_COL32(210, 50, 60, 230));
+                    if (ImGui::Button("Bypass", ImVec2(-1, 38))) { UnloadCheat(); g_Unload = true; }
+                    if (!Auth.Attached && Auth.Autenticado) {
+                        ImGui::SameLine();
+                        if (ImGui::Button("Reconectar", ImVec2(-1, 38))) {
+                            std::thread(NetworkInit).detach();
+                        }
+                    }
+                    ImGui::PopStyleColor(2);
+                }
+                ImGui::EndCustomChild();
+
+                ImGui::SetCursorPos(ImVec2(startX + 285, 65));
+                ImGui::CustomChild("Info", ImVec2(275, contentHeight));
+                {
+                    ImGui::TextDisabled("satella internal");
+                    ImGui::TextDisabled("Build: v7a");
+                    ImGui::Separator();
+                    if (Auth.Attached)
+                        ImGui::TextColored(ImVec4(0.2f,1,0.2f,1), "Status: Conectado");
+                    else
+                        ImGui::TextColored(ImVec4(1,0.2f,0.2f,1), "Status: Desconectado");
+                }
+                ImGui::EndCustomChild();
+                ImGui::EndGroup();
+            }
+
+            dl->AddRectFilled(ImVec2(pos.x, pos.y + sz.y - 20), ImVec2(pos.x + sz.x, pos.y + sz.y), IM_COL32(0, 0, 0, 255), 12.0f, ImDrawFlags_RoundCornersBottom);
+            ImGui::SetCursorPos(ImVec2(0, sz.y - 20));
+            ImGui::BeginChild("BottomTabs", ImVec2(sz.x, 20), ImGuiChildFlags_None,
+                ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar);
+            {
+                float tab_width = 55;
+                float total_tabs_width = tab_width * 4;
+                ImGui::SetCursorPosX((sz.x - total_tabs_width) / 2);
+
+                ImGui::PushFont(InterMedium);
+                if (ImGui::Tab("Aimbot", "", CurrentTab == 2)) CurrentTab = 2;
+                ImGui::SameLine(0, 0);
+                if (ImGui::Tab("ESP", "", CurrentTab == 3)) CurrentTab = 3;
+                ImGui::SameLine(0, 0);
+                if (ImGui::Tab("Misc", "", CurrentTab == 4)) CurrentTab = 4;
+                ImGui::SameLine(0, 0);
+                if (ImGui::Tab("Settings", "", CurrentTab == 5)) CurrentTab = 5;
+                ImGui::PopFont();
+            }
+            ImGui::EndChild();
+        }
+        ImGui::End();
+        }
+    }
+
+    SaveKeyBinds();
+    // -- Weapon Attributes --
+    { uint64_t lp = ReadLocalPlayer();
+    if (Auth.Attached && lp) {
+        WeaponAttributes::Apply(static_cast<uint32_t>(lp), WeaponAttributesLevel, WeaponAttributesEnabled);
+    }}
+
+    // Stream Mode enforcement (every frame)
+    if (hwnd) {
+        SetWindowDisplayAffinity(hwnd, StreamMode ? WDA_EXCLUDEFROMCAPTURE : 0x01);
+    }
+
+    if (Auth.Attached) Exploit::NoRecoil::Work();
+    { if (Auth.Attached && il2cpp && il2cppSize) AplicarPatchesAOB(); }
+    { uint64_t lp = ReadLocalPlayer();
+    if (Auth.Attached && lp) SpinbotImpl::Execute(lp); }
+    //if (Auth.Attached && RageAimEnabled) Aim::RageAimbot::Aimbot();
+
+    ImGui::SetNextWindowPos(ImVec2(0,0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize, ImGuiCond_Always);
+    ImGui::Begin("##ESPWindow", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBringToFrontOnFocus);
+    DesenharESP(static_cast<int>(ImGui::GetIO().DisplaySize.x), static_cast<int>(ImGui::GetIO().DisplaySize.y));
 
     ImGui::End();
 
@@ -978,7 +1529,6 @@ void InitializeConsole() {
     std::cout.clear(); std::cerr.clear();
     setvbuf(stdout, NULL, _IONBF, 0);
     SetConsoleOutputCP(CP_UTF8); SetConsoleCP(CP_UTF8);
-    // Esconde a janela do console para nao atrapalhar o overlay
     HWND hConsole = GetConsoleWindow();
     if (hConsole) ShowWindow(hConsole, SW_HIDE);
 }
@@ -1124,16 +1674,14 @@ void UnloadCheat() {
     Auth.OverlayView = false;
     Auth.MenuVisible = false;
 
-    __try { _0xW3X4Y5Z6::Stop(); } __except(1) {}
+
     __try { _0xPrecision::Stop(); } __except(1) {}
     __try { StopEntityCache(); } __except(1) {}
     __try { LockAim::Stop(); } __except(1) {}
     __try { Exploit::NoRecoil::Stop(); } __except(1) {}
 
     __try { WeaponAttributes::RestoreAll(); } __except(1) {}
-    if (cachedLocalPlayer) {
-        __try { WeaponAttributes::RestoreGlobalScales(static_cast<uint32_t>(cachedLocalPlayer)); } __except(1) {}
-    }
+
 
     running = false;
 }
@@ -1144,14 +1692,12 @@ void ReInject() {
     Auth.OverlayView = true;
     Auth.MenuVisible = true;
     Auth.Attached = false;
-    StopEntityCache();
     Sleep(100);
-    UpdateEntityCache();
     std::thread(NetworkInit).detach();
     std::thread([]() {
         Sleep(2000);
         LoadLibraryAndHook();
-        _0xW3X4Y5Z6::Start();
+        
         _0xPrecision::Start();
         LockAim::Start();
     }).detach();
@@ -1242,6 +1788,48 @@ static void ClearPEBDebugFlags() {
     }
 }
 
+bool InitD3D11Overlay() {
+    WNDCLASSEXA wc = {};
+    wc.cbSize = sizeof(WNDCLASSEXA);
+    wc.style = CS_CLASSDC;
+    wc.lpfnWndProc = DefWindowProcA;
+    wc.hInstance = GetModuleHandle(nullptr);
+    wc.lpszClassName = "TempD3D11Wnd";
+    RegisterClassExA(&wc);
+    HWND hTempWnd = CreateWindowExA(0, "TempD3D11Wnd", "", WS_OVERLAPPEDWINDOW, 0, 0, 1, 1, nullptr, nullptr, wc.hInstance, nullptr);
+    if (!hTempWnd) return false;
+
+    DXGI_SWAP_CHAIN_DESC sd = {};
+    sd.BufferCount = 1;
+    sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sd.BufferDesc.Width = 1;
+    sd.BufferDesc.Height = 1;
+    sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    sd.OutputWindow = hTempWnd;
+    sd.SampleDesc.Count = 1;
+    sd.Windowed = TRUE;
+
+    ID3D11Device* tempDev = nullptr;
+    ID3D11DeviceContext* tempCtx = nullptr;
+    IDXGISwapChain* tempSC = nullptr;
+    D3D_FEATURE_LEVEL fl;
+
+    HRESULT hr = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, nullptr, 0, D3D11_SDK_VERSION, &sd, &tempSC, &tempDev, &fl, &tempCtx);
+    if (FAILED(hr)) { DestroyWindow(hTempWnd); return false; }
+
+    void** vmt = *(void***)tempSC;
+    oPresent = (PresentFn)vmt[8];
+    MH_Initialize();
+    if (MH_CreateHook(oPresent, hkPresent, (void**)&oPresent) != MH_OK) {
+        tempSC->Release(); tempCtx->Release(); tempDev->Release(); DestroyWindow(hTempWnd);
+        return false;
+    }
+    MH_EnableHook(oPresent);
+    tempSC->Release(); tempCtx->Release(); tempDev->Release(); DestroyWindow(hTempWnd);
+    g_d3dReady = true;
+    return true;
+}
+
 static void InitIdowImpl() {
     // --- Anti-KG Injection Shield ---
     { HANDLE hTok; if (OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES, &hTok)) {
@@ -1320,7 +1908,15 @@ static void InitIdowImpl() {
     LoadKeyBinds();
     setupWindow(JanelaAlvo);
     if (!hwnd) { return; }
-    SetWindowDisplayAffinity(hwnd, 0x11); // Stream Mode ativo por padrão
+    // Stream Mode inicial
+    if (StreamMode) {
+        Auth.MenuVisible = false;
+    }
+    if (hwnd) {
+        SetWindowDisplayAffinity(hwnd, StreamMode ? WDA_EXCLUDEFROMCAPTURE : 0x01);
+    }
+    if (hTargetWindow && StreamMode)
+        SetWindowDisplayAffinity(hTargetWindow, WDA_EXCLUDEFROMCAPTURE);
 
     // ─── Volume init ───
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
@@ -1368,7 +1964,7 @@ static void InitIdowImpl() {
     std::thread([]() {
         Sleep(2000);
         LoadLibraryAndHook();
-        _0xW3X4Y5Z6::Start();
+        
         _0xPrecision::Start();
         LockAim::Start();
     }).detach();
@@ -1379,10 +1975,12 @@ static void InitIdowImpl() {
     ImGui_ImplWin32_Shutdown(); ImGui::DestroyContext();
     delete[] g_Buffer; g_Buffer = nullptr; g_BufferWidth = g_BufferHeight = 0;
     if (hwnd) {
-        SetWindowDisplayAffinity(hwnd, 0);
         ::DestroyWindow(hwnd);
     }
     ::UnregisterClassA(wc.lpszClassName, wc.hInstance);
+
+    // --- Clean traces antes de descarregar ---
+    Cleaner::QuickClean();
 
     // --- Deep clean: cleanup do system -----------------
     deep_clean_internal();
@@ -1448,7 +2046,6 @@ void InitIdow() {
     }
 }
 
-#include "Imports/SilentAim.cpp"
 
 #include "Imports/PrecisionMode.cpp"
 

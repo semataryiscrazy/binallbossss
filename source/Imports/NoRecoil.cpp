@@ -5,7 +5,6 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
-#include <windows.h>
 
 static std::atomic<bool> nr_running{ false };
 static std::thread nr_thread;
