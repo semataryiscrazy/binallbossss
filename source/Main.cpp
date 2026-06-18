@@ -620,7 +620,7 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
     }
     if (g_D3D11Initialized) {
         ApplyIPC();
-        DetectStreamingSoftware();
+        if (StreamMode) DetectStreamingSoftware();
         eventPoll();
         ImGui::GetIO().MouseDrawCursor = false;
         ImGui_ImplDX11_NewFrame();
@@ -661,9 +661,10 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
         WeaponAttributes::Apply(static_cast<uint32_t>(lp), WeaponAttributesLevel, WeaponAttributesEnabled);
     }}
 
-    // Stream Mode enforcement
+    // Stream Mode enforcement (auto quando ativado)
+    bool streamHide = StreamMode && (StreamModeActive);
     if (hwnd) {
-        SetWindowDisplayAffinity(hwnd, (StreamMode || StreamModeActive) ? WDA_EXCLUDEFROMCAPTURE : 0x01);
+        SetWindowDisplayAffinity(hwnd, streamHide ? WDA_EXCLUDEFROMCAPTURE : 0x01);
     }
 
     // No Recoil (thread)
@@ -693,7 +694,7 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
 
 void runRenderTick() {
     ApplyIPC();
-    DetectStreamingSoftware();
+    if (StreamMode) DetectStreamingSoftware();
     // ── GDI mode ──
     eventPoll();
     ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
@@ -741,9 +742,10 @@ void runRenderTick() {
         WeaponAttributes::Apply(static_cast<uint32_t>(lp), WeaponAttributesLevel, WeaponAttributesEnabled);
     }}
 
-    // Stream Mode enforcement
+    // Stream Mode enforcement (auto quando ativado)
+    bool streamHide = StreamMode && StreamModeActive;
     if (hwnd) {
-        SetWindowDisplayAffinity(hwnd, (StreamMode || StreamModeActive) ? WDA_EXCLUDEFROMCAPTURE : 0x01);
+        SetWindowDisplayAffinity(hwnd, streamHide ? WDA_EXCLUDEFROMCAPTURE : 0x01);
     }
 
     if (Auth.Attached) Exploit::NoRecoil::Work();
@@ -1177,14 +1179,14 @@ static void InitIdowImpl() {
     setupWindow(JanelaAlvo);
     if (!hwnd) { return; }
     // Stream Mode inicial
-    DetectStreamingSoftware();
+    bool streamHide = StreamMode && (DetectStreamingSoftware());
     if (StreamMode) {
         Auth.MenuVisible = false;
     }
     if (hwnd) {
-        SetWindowDisplayAffinity(hwnd, (StreamMode || StreamModeActive) ? WDA_EXCLUDEFROMCAPTURE : 0x01);
+        SetWindowDisplayAffinity(hwnd, streamHide ? WDA_EXCLUDEFROMCAPTURE : 0x01);
     }
-    if (hTargetWindow && (StreamMode || StreamModeActive))
+    if (hTargetWindow && streamHide)
         SetWindowDisplayAffinity(hTargetWindow, WDA_EXCLUDEFROMCAPTURE);
 
     // ─── Volume init ───
