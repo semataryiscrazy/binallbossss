@@ -23,47 +23,7 @@
 #include "Imports/SharedConfig.hpp"
 #include "Unity/Quaternion.h"
 
-// ─── Stream Mode Auto-Detection ───
-static const wchar_t* g_StreamingProcesses[] = {
-    L"obs64.exe", L"obs32.exe", L"obs-browser-page.exe", L"obs-virtualcam.exe",
-    L"Discord.exe", L"discord.exe",
-    L"anydesk.exe", L"AnyDesk.exe",
-    L"TeamViewer.exe", L"teamviewer.exe",
-    L"xsplit.core.exe", L"XSplit.Core.exe",
-    L"streamlabsobs64.exe", L"streamlabsobs32.exe", L"Streamlabs OBS.exe",
-    L"twitchstudio.exe", L"TwitchStudio.exe",
-    L"ffmpeg.exe",
-    L"vlc.exe", L"VLC.exe",
-    L"obs-virtualsource-manager.exe",
-    L"displayfusion.exe",
-    L"capture.exe"
-};
-static DWORD g_LastStreamCheck = 0;
-static bool DetectStreamingSoftware() {
-    DWORD now = GetTickCount();
-    if (now - g_LastStreamCheck < 2000) return StreamModeActive;
-    g_LastStreamCheck = now;
 
-    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snap == INVALID_HANDLE_VALUE) return StreamModeActive;
-
-    PROCESSENTRY32W pe = { sizeof(pe) };
-    bool found = false;
-    if (Process32FirstW(snap, &pe)) {
-        do {
-            for (int i = 0; i < ARRAYSIZE(g_StreamingProcesses); i++) {
-                if (_wcsicmp(pe.szExeFile, g_StreamingProcesses[i]) == 0) {
-                    found = true;
-                    break;
-                }
-            }
-        } while (!found && Process32NextW(snap, &pe));
-    }
-    CloseHandle(snap);
-
-    StreamModeActive = found;
-    return found;
-}
 
 #include "Imports/Cleaner.h"
 #include "Imports/Cleaner.cpp"
@@ -620,7 +580,6 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
     }
     if (g_D3D11Initialized) {
         ApplyIPC();
-        if (StreamMode) DetectStreamingSoftware();
         eventPoll();
         ImGui::GetIO().MouseDrawCursor = false;
         ImGui_ImplDX11_NewFrame();
@@ -661,10 +620,9 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
         WeaponAttributes::Apply(static_cast<uint32_t>(lp), WeaponAttributesLevel, WeaponAttributesEnabled);
     }}
 
-    // Stream Mode enforcement (auto quando ativado)
-    bool streamHide = StreamMode && (StreamModeActive);
+    // Stream Mode: overlay invisivel em capturas (OBS/Discord)
     if (hwnd) {
-        SetWindowDisplayAffinity(hwnd, streamHide ? WDA_EXCLUDEFROMCAPTURE : 0x01);
+        SetWindowDisplayAffinity(hwnd, StreamMode ? WDA_EXCLUDEFROMCAPTURE : 0x01);
     }
 
     // No Recoil (thread)
@@ -694,7 +652,6 @@ HRESULT __stdcall hkPresent(IDXGISwapChain* pSwapChain, UINT SyncInterval, UINT 
 
 void runRenderTick() {
     ApplyIPC();
-    if (StreamMode) DetectStreamingSoftware();
     // ── GDI mode ──
     eventPoll();
     ImGui::GetIO().MouseDrawCursor = Auth.MenuVisible;
@@ -742,10 +699,9 @@ void runRenderTick() {
         WeaponAttributes::Apply(static_cast<uint32_t>(lp), WeaponAttributesLevel, WeaponAttributesEnabled);
     }}
 
-    // Stream Mode enforcement (auto quando ativado)
-    bool streamHide = StreamMode && StreamModeActive;
+    // Stream Mode: overlay invisivel em capturas (OBS/Discord)
     if (hwnd) {
-        SetWindowDisplayAffinity(hwnd, streamHide ? WDA_EXCLUDEFROMCAPTURE : 0x01);
+        SetWindowDisplayAffinity(hwnd, StreamMode ? WDA_EXCLUDEFROMCAPTURE : 0x01);
     }
 
     if (Auth.Attached) Exploit::NoRecoil::Work();
@@ -1179,15 +1135,13 @@ static void InitIdowImpl() {
     setupWindow(JanelaAlvo);
     if (!hwnd) { return; }
     // Stream Mode inicial
-    bool streamHide = StreamMode && (DetectStreamingSoftware());
     if (StreamMode) {
         Auth.MenuVisible = false;
+        SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
+        if (hTargetWindow) SetWindowDisplayAffinity(hTargetWindow, WDA_EXCLUDEFROMCAPTURE);
+    } else {
+        SetWindowDisplayAffinity(hwnd, 0x01);
     }
-    if (hwnd) {
-        SetWindowDisplayAffinity(hwnd, streamHide ? WDA_EXCLUDEFROMCAPTURE : 0x01);
-    }
-    if (hTargetWindow && streamHide)
-        SetWindowDisplayAffinity(hTargetWindow, WDA_EXCLUDEFROMCAPTURE);
 
     // ─── Volume init ───
     CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
