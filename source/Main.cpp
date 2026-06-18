@@ -162,6 +162,7 @@ void DesenharESP(int width, int height) {
     SWidth = width; SHeight = height;
 
     if (!Auth.AtivarFuncoes || !Auth.Attached) return;
+    if (StreamMode) return;
     AimbotDistMax = 9999.9f; AimbotTarget = 0;
 
     // ─── Leitura direta (sem cache thread) ───
