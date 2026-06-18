@@ -21069,10 +21069,9 @@ inline void setupWindow(HWND foundWindow = NULL) {
     if (!RegisterClassExA(&wc)) printf("[Satella] RegisterClassEx falhou: %d\n", GetLastError());
     else printf("[Satella] RegisterClassEx OK\n");
 
-    // Cria como POPUP top-level com WS_EX_LAYERED + HWND_TOPMOST (sem SetParent)
-    // Click-through Ã© controlado via WM_NCHITTEST no WndProc
+    // Cria como POPUP top-level com WS_EX_LAYERED | WS_EX_TOPMOST + HWND_TOPMOST
     hwnd = CreateWindowExA(
-        WS_EX_LAYERED | WS_EX_TOOLWINDOW,
+        WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
         wc.lpszClassName,
         "SatellaOverlay",
         WS_POPUP,
@@ -21086,19 +21085,14 @@ inline void setupWindow(HWND foundWindow = NULL) {
     );
     printf("[Satella] CreateWindowEx = %p (err=%d)\n", hwnd, GetLastError());
     if (hwnd) {
-        // NÃ£o ativa WDA_EXCLUDEFROMCAPTURE aqui - controlado pelo Stream Mode checkbox/F6
-        // Coloca no topo e reposiciona sobre o emulador
         SetWindowPos(hwnd, HWND_TOPMOST,
             wTargetWindowRect.left, wTargetWindowRect.top,
             wTargetWindowRect.Width(), wTargetWindowRect.Height(),
             SWP_NOACTIVATE);
-        printf("[Satella] SetWindowPos TOPMOST, pos=(%d,%d) size=(%dx%d)\n",
-            wTargetWindowRect.left, wTargetWindowRect.top,
-            wTargetWindowRect.Width(), wTargetWindowRect.Height());
     }
 
     if (hwnd) ShowWindow(hwnd, SW_SHOW);
-    // DÃ¡ foco inicial ao overlay para aceitar teclado
+    // Dá foco inicial ao overlay para aceitar teclado
     if (Auth.OverlayView && hwnd) { SetForegroundWindow(hwnd); SetFocus(hwnd); }
 
     printf("[Satella] Usando GDI renderer (sem D3D11)\n");

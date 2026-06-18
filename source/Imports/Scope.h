@@ -31,7 +31,7 @@ inline struct {
 } KeysBind;
 
 // === AIMBOT ===
-inline bool AimSilent = false;
+
 inline bool AimVisibleCheck = true;
 inline bool AimPrediction = true;
 inline float AimPredictionAmount = 1.5f;
@@ -51,7 +51,7 @@ inline bool FastReload = false;
 inline bool RageAimEnabled = false;
 inline int RageAimKey = VK_RBUTTON;
 inline bool RageAimRequireKey = false;
-inline int AimbotHitbox = 0; // 0=Head, 1=Body
+inline int AimbotHitbox = 0; // 0=Head
 
 // === LEGIT AIMBOT ===
 inline bool LegitAimEnabled = false;
@@ -64,7 +64,7 @@ inline float LegitAimPredictionAmount = 1.5f;
 inline int LegitAimHitbox = 0; // 0=Body, 1=Head, 2=Neck, 3=Chest
 
 // === NOVO AIMBOT (Configuravel) ===
-inline bool AimbotLegit = true;
+inline bool AimbotLegit = false;
 inline int AimbotKeyBind = 0;
 inline int AimbotMaxDistance = 200;
 inline bool AimbotIgnoreKnocked = false;
@@ -75,25 +75,19 @@ inline int AimbotPeitosIndex = 0;
 inline uintptr_t AimbotTarget = 0;
 inline float AimbotDistMax = 9999.9f;
 inline bool AimbotNoRecoil = false;
+inline bool AimBotNeckEnabled = false;
 inline bool AimbotPrecision = false;
 inline float PrecisionAssist = 0.5f;
 
-// === SILENT AIM ===
-inline int SilentAimKeyBind = 0; // 0 = no key required
-inline float SilentAimFOV = 15.0f;
-inline int SilentAimDistance = 200;
-inline int SilentAimHitbox = 0; // 0=head, 1=body
-inline bool SilentAimIgnoreKnocked = true;
-inline bool SilentAimIgnoreBots = true;
 
 // === ESP ===
 inline bool ESPNome = false;
 inline bool ESPLinha = false;
-inline bool ESPEsqueleto = true;
+inline bool ESPEsqueleto = false;
 inline int ESPCaixa = 0;
 inline bool ESPFilledBox = false;
 inline bool ESPDistancia = false;
-inline bool ESPHealthText = true;
+inline bool ESPHealthText = false;
 inline int ESPHealthBarPos = 1; // 0=Off, 1=Left, 2=Right, 3=Top, 4=Bottom
 inline bool ESPMostrarTime = false;
 inline bool ESPMostrarDerrubado = false;
@@ -106,12 +100,12 @@ inline float espMaxDistance = 250.0f;
 inline int linePosition = 1;
 inline float espOffsetX = 0.0f;
 inline float espOffsetY = 0.0f;
-inline float WeaponSpeedValue = 1.35f;
+inline float WeaponSpeedValue = 1.7f;
 
 // === MISC ===
 inline bool ShowDebugConsole = false;
-inline bool Watermark = true;
-inline bool FPSCounter = true;
+inline bool Watermark = false;
+inline bool FPSCounter = false;
 inline bool WeaponAttributesEnabled = false;
 inline int WeaponAttributesLevel = 0;
 inline bool SpinBot = false;
@@ -119,40 +113,15 @@ inline int SpinbotMode = 0; // 0=Continuous, 1=Random, 2=45° Step
 inline float SpinbotSpeed = 5.0f;
 inline bool ThirdPerson = false;
 inline float ThirdPersonDist = 4.0f;
-inline bool StreamMode = true;
+inline bool StreamMode = false;
 inline bool StreamModeActive = false;
-inline bool CrosshairEnabled = true;
+inline bool CrosshairEnabled = false;
 inline bool HideTaskbar = false;
 inline bool TopMost = false;
 inline bool BypassAnticheat = false;
 inline bool AimbotTrick = false;
 inline bool PrecisionMode = false;
 
-// === AOB PATCHES ===
-inline bool PatchPixelEstendido = false;
-inline bool PatchVisao10X = false;
-inline bool PatchNoRecoilAOB = false;
-inline bool PatchFOV360 = false;
-inline bool PatchBalaInfinita = false;
-inline bool PatchWallHack = false;
-inline bool PatchSpeedHack = false;
-inline bool PatchCameraLeft = false;
-inline bool PatchTracking2X = false;
-inline bool PatchAimbotDrag = false;
-inline bool PatchWallhack2 = false;
-inline bool PatchWallhack3 = false;
-// Guarda se cada patch ja foi aplicado (evita re-aplicar)
-inline bool PatchPixelEstendidoAplicado = false;
-inline bool PatchVisao10XAplicado = false;
-inline bool PatchNoRecoilAOBAplicado = false;
-inline bool PatchFOV360Aplicado = false;
-inline bool PatchBalaInfinitaAplicado = false;
-inline bool PatchWallHackAplicado = false;
-inline bool PatchSpeedHackAplicado = false;
-inline bool PatchCameraLeftAplicado = false;
-inline bool PatchTracking2XAplicado = false;
-inline bool PatchWallhack2Aplicado = false;
-inline bool PatchWallhack3Aplicado = false;
 
 // ─── Entity Cache Centralizado ───
 struct EntityData;

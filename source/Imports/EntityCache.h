@@ -32,3 +32,5 @@ extern uintptr_t cachedLocalPlayer;
 
 std::unordered_map<uintptr_t, EntityData>& GetEntityCache();
 std::mutex& GetCacheWriteMutex();
+uintptr_t GetCachedEngine();
+bool DetectAndSetOffsets();

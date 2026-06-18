@@ -2,6 +2,7 @@
 #include "Offsets.h"
 #include "../Unity/Vector3.h"
 #include "UTF8.h"
+#include "Il2CppFinder.hpp"
 
 
 
@@ -47,13 +48,18 @@ inline std::string ObterStr(uintptr_t address, int count) {
 }
 
 inline Vector3 Transform_ObterPosicao(uintptr_t Transform) {
+    if (Transform < 0x10000) return Vector3{0,0,0};
     uintptr_t TransformAcess = Ler<uint32_t>(Transform + string2Offset(AY_OBFUSCATE("0x8")));
+    if (TransformAcess < 0x10000) return Vector3{0,0,0};
     int TransformIndex = Ler<int>(TransformAcess + string2Offset(AY_OBFUSCATE("0x24")));
     uintptr_t TransformMatrix = Ler<uint32_t>(TransformAcess + string2Offset(AY_OBFUSCATE("0x20")));
+    if (TransformMatrix < 0x10000) return Vector3{0,0,0};
     uintptr_t pTransformValues = Ler<uint32_t>(TransformMatrix + string2Offset(AY_OBFUSCATE("0x18")));
+    if (pTransformValues < 0x10000) return Vector3{0,0,0};
     uintptr_t offsetPosition = string2Offset(AY_OBFUSCATE("0x30")) * static_cast<uintptr_t>(TransformIndex);
     Vector3 ResultPosition = Ler<Vector3>(pTransformValues + offsetPosition);
     uintptr_t pOffsetCount = Ler<uint32_t>(TransformMatrix + string2Offset(AY_OBFUSCATE("0x1C")));
+    if (pOffsetCount < 0x10000) return Vector3{0,0,0};
     int IndexTransform = Ler<int>(pOffsetCount + string2Offset(AY_OBFUSCATE("0x4")) * TransformIndex);
     int curIndex = 0;
     while (IndexTransform >= 0) {
@@ -112,25 +118,25 @@ inline auto GetPlayerPosition = [](uintptr_t player, int positionType) -> Vector
 
 inline Vector3 ObterOssos(uintptr_t Player, uintptr_t Position) {
     uintptr_t ListTransform = Ler<uint32_t>(Player + Offsets::AIDDOCAPFKA);
-    if (ListTransform != string2Offset(AY_OBFUSCATE("0")))
+    if (ListTransform > 0x10000)
     {
         uintptr_t Transform = Ler<uint32_t>(ListTransform + string2Offset(AY_OBFUSCATE("0x8")));
-        if (Transform != string2Offset(AY_OBFUSCATE("0")))
+        if (Transform > 0x10000)
         {
             uintptr_t Location = Ler<uint32_t>(Transform + Position);
-            if (Location != string2Offset(AY_OBFUSCATE("0")))
+            if (Location > 0x10000)
             {
                 uintptr_t H1 = Ler<uint32_t>(Location + string2Offset(AY_OBFUSCATE("0x8")));
-                if (H1 != string2Offset(AY_OBFUSCATE("0")))
+                if (H1 > 0x10000)
                 {
                     uintptr_t H2 = Ler<uint32_t>(H1 + string2Offset(AY_OBFUSCATE("0x28")));
-                    if (H2 != string2Offset(AY_OBFUSCATE("0")))
+                    if (H2 > 0x10000)
                     {
                         uintptr_t H3 = Ler<uint32_t>(H2 + string2Offset(AY_OBFUSCATE("0x14")));
-                        if (H3 != string2Offset(AY_OBFUSCATE("0")))
+                        if (H3 > 0x10000)
                         {
                             uintptr_t H4 = H3 + string2Offset(AY_OBFUSCATE("0x60"));
-                            if (H4 != string2Offset(AY_OBFUSCATE("0")))
+                            if (H4 > 0x10000)
                             {
                                 return Ler<Vector3>(H4);
                             }
@@ -145,20 +151,22 @@ inline Vector3 ObterOssos(uintptr_t Player, uintptr_t Position) {
 
 inline Vector3 GetBonePositionV2(uintptr_t player, uintptr_t boneOffset) {
     uintptr_t Location = Ler<uint32_t>(player + boneOffset);
-    if (Location == 0 || Location < 0x10000) return Vector3{0, 0, 0};
+    if (Location < 0x10000) return Vector3{0, 0, 0};
     uintptr_t H1 = Ler<uint32_t>(Location + string2Offset(AY_OBFUSCATE("0x8")));
-    if (H1 == 0 || H1 < 0x10000) return Vector3{0, 0, 0};
+    if (H1 < 0x10000) return Vector3{0, 0, 0};
     uintptr_t H2 = Ler<uint32_t>(H1 + Offsets::Bones::Node_WorldPos);
-    if (H2 == 0 || H2 < 0x10000) return Vector3{0, 0, 0};
+    if (H2 < 0x10000) return Vector3{0, 0, 0};
     uintptr_t H3 = Ler<uint32_t>(H2 + string2Offset(AY_OBFUSCATE("0x14")));
-    if (H3 == 0 || H3 < 0x10000) return Vector3{0, 0, 0};
+    if (H3 < 0x10000) return Vector3{0, 0, 0};
     return Ler<Vector3>(H3 + string2Offset(AY_OBFUSCATE("0x60")));
 }
 
 inline Vector3 GetHeadPosition(uintptr_t Entidade) {
     uintptr_t ListTransform = Ler<uint32_t>(Entidade + Offsets::AIDDOCAPFKA);
     if (ListTransform > 0x10000) {
-        bool Garota = Ler<bool>(Entidade + Offsets::CDOBMFNCJHD);
+        bool Garota = false;
+        uintptr_t gf = Ler<uint32_t>(Entidade + Offsets::CDOBMFNCJHD);
+        if (gf > 0x10000) Garota = Ler<bool>(Entidade + Offsets::CDOBMFNCJHD);
         uintptr_t boneOffset = Garota ? string2Offset(AY_OBFUSCATE("0x3C")) : string2Offset(AY_OBFUSCATE("0x38"));
 
         uintptr_t Transform = Ler<uint32_t>(ListTransform + string2Offset(AY_OBFUSCATE("0x8")));

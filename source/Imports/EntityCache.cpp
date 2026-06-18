@@ -36,18 +36,176 @@ static uintptr_t cachedGE = 0;
 static uintptr_t cachedLocal = 0;
 static auto engineTimer = std::chrono::steady_clock::now();
 
+// Auto-detected offsets
+static uintptr_t g_AutoMainTransform = 0;
+static uintptr_t g_AutoAidDocApfka = 0;
+static uintptr_t g_AutoCdobmnfcjhd = 0;
+static uintptr_t g_AutoCameraChain = 0;
+static bool g_AutoDetectDone = false;
+static int g_AutoDetectFail = 0;
+
+uintptr_t GetCachedEngine() { return cachedGE; }
+
+static bool LooksLikeTransform(uintptr_t ptr) {
+    if (ptr < 0x10000) return false;
+    uintptr_t access = Ler<uint32_t>(ptr + 0x8);
+    if (access < 0x10000) return false;
+    int idx = Ler<int>(access + 0x24);
+    if (idx < 0 || idx > 500) return false;
+    uintptr_t matrixPtr = Ler<uint32_t>(access + 0x20);
+    if (matrixPtr < 0x10000) return false;
+    uintptr_t values = Ler<uint32_t>(matrixPtr + 0x18);
+    if (values < 0x10000) return false;
+    return true;
+}
+
+static uintptr_t DetectMainTransform(uintptr_t entity) {
+    static const uint32_t cand[] = {0x30,0x34,0x38,0x3C,0x40,0x44,0x48,0x4C,0x50,0x54,0x58,0x5C};
+    for (auto off : cand) {
+        uintptr_t ptr = Ler<uint32_t>(entity + off);
+        if (LooksLikeTransform(ptr)) {
+            std::cout << "[Auto] MainTransform found at 0x" << std::hex << off << std::endl;
+            return off;
+        }
+    }
+    return 0;
+}
+
+static uintptr_t DetectAidDocApfka(uintptr_t entity) {
+    static const uint32_t cand[] = {0x750,0x754,0x758,0x75C,0x760,0x764,0x768,0x76C,0x770,0x774,0x778};
+    for (auto off : cand) {
+        uintptr_t list = Ler<uint32_t>(entity + off);
+        if (list > 0x10000) {
+            uintptr_t first = Ler<uint32_t>(list + 0x8);
+            if (LooksLikeTransform(first)) {
+                std::cout << "[Auto] AIDDOCAPFKA found at 0x" << std::hex << off << std::endl;
+                return off;
+            }
+        }
+    }
+    return 0;
+}
+
+static uintptr_t DetectCameraChain(uintptr_t ge) {
+    static const uint32_t cand[] = {0x68,0x6C,0x70,0x74,0x78,0x7C,0x80,0x84,0x88,0x8C,0x90};
+    for (auto off : cand) {
+        uintptr_t ccm = Ler<uint32_t>(ge + off);
+        if (ccm < 0x10000) continue;
+        uintptr_t cam = Ler<uint32_t>(ccm + 0x10);
+        if (cam < 0x10000) continue;
+        uintptr_t ic = Ler<uint32_t>(cam + 0x8);
+        if (ic < 0x10000) continue;
+        UnityMatrix m = Ler<UnityMatrix>(ic + Offsets::ViewMatrix);
+        if (m._11 != 0 || m._22 != 0 || m._33 != 0) {
+            std::cout << "[Auto] CameraChain found at 0x" << std::hex << off << std::endl;
+            return off;
+        }
+    }
+    return 0;
+}
+
+bool DetectAndSetOffsets() {
+    uintptr_t ge = cachedGE;
+    if (ge == 0) return false;
+
+    if (g_AutoCameraChain == 0) {
+        uintptr_t camOff = DetectCameraChain(ge);
+        if (camOff) g_AutoCameraChain = camOff;
+    }
+
+        if (g_AutoMainTransform == 0 || g_AutoAidDocApfka == 0 || g_AutoCdobmnfcjhd == 0) {
+        uintptr_t dict = Ler<uint32_t>(ge + Offsets::DictionaryEntities);
+        if (dict > 0x10000) {
+            uintptr_t list = Ler<uint32_t>(dict + Offsets::Il2CppDictionaryDataPtr);
+            if (list > 0x10000) {
+                list += 0x10;
+                int cnt = Ler<int>(dict + Offsets::Il2CppDictionaryCount);
+                if (cnt > 0 && cnt < 200) {
+                    for (int i = 0; i < cnt && i < 10; i++) {
+                        uintptr_t e = Ler<uint32_t>(list + (i * 0x10) + 0xC);
+                        if (e == 0 || e < 0x10000) continue;
+                        if (g_AutoMainTransform == 0)
+                            g_AutoMainTransform = DetectMainTransform(e);
+                        if (g_AutoAidDocApfka == 0)
+                            g_AutoAidDocApfka = DetectAidDocApfka(e);
+                        if (g_AutoCdobmnfcjhd == 0) {
+                            static const uint32_t cdCand[] = {0x7C1,0x7C5,0x7C9,0x7B1,0x7B5,0x7B9,0x7BD,0x7C0,0x7C4,0x7C8,0x7CC};
+                            for (auto coff : cdCand) {
+                                uintptr_t cv = Ler<uint32_t>(e + coff);
+                                if (cv == 0 || cv == 1) { g_AutoCdobmnfcjhd = coff; break; }
+                            }
+                        }
+                        if (g_AutoMainTransform && g_AutoAidDocApfka && g_AutoCdobmnfcjhd) break;
+                    }
+                }
+            }
+        }
+    }
+
+    g_AutoDetectDone = (g_AutoMainTransform != 0 || g_AutoAidDocApfka != 0 || g_AutoCameraChain != 0);
+    if (g_AutoMainTransform) { Offsets::MainTransform = g_AutoMainTransform; std::cout << "[Auto] MainTransform <- 0x" << std::hex << g_AutoMainTransform << std::endl; }
+    if (g_AutoAidDocApfka) { Offsets::AIDDOCAPFKA = g_AutoAidDocApfka; std::cout << "[Auto] AIDDOCAPFKA <- 0x" << std::hex << g_AutoAidDocApfka << std::endl; }
+    if (g_AutoCdobmnfcjhd) { Offsets::CDOBMFNCJHD = g_AutoCdobmnfcjhd; std::cout << "[Auto] CDOBMFNCJHD <- 0x" << std::hex << g_AutoCdobmnfcjhd << std::endl; }
+    return g_AutoDetectDone;
+}
+
+static uintptr_t g_AutoInitBase = 0;
+static std::chrono::steady_clock::time_point g_AutoInitBaseScanStart;
+static bool g_AutoInitBaseScanning = false;
+
+static uintptr_t ScanInitBase() {
+    if (il2cpp < 0x10000) return 0;
+    // Only scan a few key ranges, time-boxed
+    static const uint32_t ranges[][2] = {
+        {0x9EC1800, 0x9EC2000},  // F5 dump area (common)
+        {0xA110000, 0xA120000},  // around old InitBase
+        {0x9EB0000, 0x9ED0000},  // wider around F5 area
+        {0xA100000, 0xA130000},  // wider around InitBase
+        {0x9E00000, 0x9F00000},  // full scan area
+        {0xA000000, 0xA300000},
+    };
+    g_AutoInitBaseScanning = true;
+    g_AutoInitBaseScanStart = std::chrono::steady_clock::now();
+    for (int r = 0; r < sizeof(ranges)/sizeof(ranges[0]); r++) {
+        auto elapsed = std::chrono::steady_clock::now() - g_AutoInitBaseScanStart;
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() > 5000) break; // max 5s total
+        uint32_t start = ranges[r][0], end = ranges[r][1];
+        for (uint32_t off = start; off < end; off += 4) {
+            uintptr_t base = Ler<uint32_t>(il2cpp + off);
+            if (base > 0x10000 && base < 0xFFF00000) {
+                uintptr_t facade = Ler<uint32_t>(base);
+                if (facade > 0x10000 && facade < 0xFFF00000) {
+                    uintptr_t sf = Ler<uint32_t>(facade + Offsets::StaticClass);
+                    if (sf > 0x10000 && sf < 0xFFF00000) {
+                        uintptr_t eng = Ler<uint32_t>(sf);
+                        if (eng > 0x10000 && eng < 0xFFF00000) {
+                            std::cout << "[Auto] InitBase candidate at 0x" << std::hex << off << " eng=0x" << eng << std::endl;
+                            g_AutoInitBaseScanning = false;
+                            return off;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    std::cout << "[Auto] InitBase scan finished, not found" << std::endl;
+    g_AutoInitBaseScanning = false;
+    return 0;
+}
+
+static int g_EngineFailCount = 0;
 static uintptr_t GetEngine() {
     auto now = std::chrono::steady_clock::now();
     if (std::chrono::duration_cast<std::chrono::milliseconds>(now - engineTimer).count() > 500) {
         engineTimer = now;
-        cachedGE = 0;
-        if (il2cpp < 0x10000) return 0;
-        uintptr_t base = Ler<uint32_t>(il2cpp + Offsets::InitBase);
-        if (base != 0 && base > 0x10000) {
+        if (il2cpp < 0x10000) { cachedGE = 0; return 0; }
+        uintptr_t initOff = g_AutoInitBase ? g_AutoInitBase : Offsets::InitBase;
+        uintptr_t base = Ler<uint32_t>(il2cpp + initOff);
+        if (base > 0x10000) {
             uintptr_t facade = Ler<uint32_t>(base);
-            if (facade != 0 && facade > 0x10000) {
+            if (facade > 0x10000) {
                 uintptr_t sf = Ler<uint32_t>(facade + Offsets::StaticClass);
-                if (sf != 0 && sf > 0x10000) cachedGE = Ler<uint32_t>(sf);
+                if (sf > 0x10000) cachedGE = Ler<uint32_t>(sf);
             }
         }
     }
@@ -85,17 +243,17 @@ static void CacheLoop() {
 
         uintptr_t ge = GetEngine(); if (ge == 0) {
             failCount++;
-            if (failCount > 120) { // ~6s sem engine = aviso
+            if (failCount > 120) {
                 std::cout << "[CacheLoop] failCount>120, engine still not ready" << std::endl;
-                failCount = 60; // reset para continuar tentando
+                failCount = 60;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(50)); continue;
         }
         if (failCount > 0) std::cout << "[CacheLoop] GetEngine OK! ge=" << std::hex << ge << std::endl;
         failCount = 0;
 
-        // Atualiza camera matrix + copia atomica para render
-        uintptr_t ccm = Ler<uint32_t>(ge + 0x74);
+        uintptr_t camOff = g_AutoCameraChain ? g_AutoCameraChain : string2Offset(AY_OBFUSCATE("0x74"));
+        uintptr_t ccm = Ler<uint32_t>(ge + camOff);
         if (ccm > 0x10000) {
             uintptr_t cam = Ler<uint32_t>(ccm + string2Offset(AY_OBFUSCATE("0x10")));
             if (cam > 0x10000) {
@@ -114,7 +272,6 @@ static void CacheLoop() {
 
         cachedLocalPlayer = GetLocal(ge);
         if (cachedLocalPlayer == 0) {
-            // Partida encerrou — limpa cache pra ESP nao ficar travado
             {
                 std::lock_guard<std::mutex> lock(g_cacheSwapMutex);
                 g_cacheBack.clear();
@@ -127,7 +284,6 @@ static void CacheLoop() {
 
         lastEntityUpdate = now;
 
-        // Cleanup stale entries a cada 5s (nao bloqueia swap)
         if (now - lastCleanup > 5000) {
             lastCleanup = now;
             std::lock_guard<std::mutex> lock(g_cacheSwapMutex);
@@ -140,7 +296,10 @@ static void CacheLoop() {
         list += 0x10;
         int cnt = Ler<int>(dict + Offsets::Il2CppDictionaryCount); if (cnt < 1 || cnt > 200) { g_cacheBack.clear(); SwapEntityCache(); continue; }
 
-        Vector3 myPos = Transform_ObterPosicao(Ler<uint32_t>(cachedLocalPlayer + Offsets::MainTransform));
+        if (!g_AutoDetectDone) DetectAndSetOffsets();
+
+        uintptr_t mtOff = g_AutoMainTransform ? g_AutoMainTransform : Offsets::MainTransform;
+        Vector3 myPos = Transform_ObterPosicao(Ler<uint32_t>(cachedLocalPlayer + mtOff));
 
     for (int i = 0; i < cnt; i++) {
         uintptr_t e = Ler<uint32_t>(list + (i * 0x10) + 0xC);
@@ -150,8 +309,6 @@ static void CacheLoop() {
         uintptr_t am = Ler<uint32_t>(e + Offsets::AvatarManager); if (am == 0 || am < 0x10000) continue;
         uintptr_t uas = Ler<uint32_t>(am + Offsets::UmaAvatarSimple); if (uas == 0 || uas < 0x10000) continue;
         uintptr_t ud = Ler<uint32_t>(uas + Offsets::UMAData); if (ud == 0 || ud < 0x10000) continue;
-        if (Ler<int>(e + string2Offset(AY_OBFUSCATE("0xC1C"))) == 0)
-            if (!Ler<bool>(uas + Offsets::Avatar_IsVisible)) continue;
         uintptr_t pri = Ler<uint32_t>(e + Offsets::PRIDataPool); if (pri == 0 || pri < 0x10000) continue;
         uintptr_t rdu = Ler<uint32_t>(Ler<uint32_t>(pri + Offsets::ReplicationDataPoolUnsafe) + Offsets::ReplicationDataUnsafe); if (rdu == 0 || rdu < 0x10000) continue;
         fr.health = Ler<short>(rdu + Offsets::Health); if (fr.health <= 0) continue;
@@ -181,7 +338,6 @@ static void CacheLoop() {
             }
         }
 
-        // Weapon name
         {
             uintptr_t wpn = Ler<uint32_t>(e + Offsets::Weapon);
             if (wpn > 0x10000) {
@@ -229,7 +385,6 @@ static void CacheLoop() {
         g_cacheBack[e] = fr;
     }
 
-        // Anti-flicker: keep entities valid within 100ms, but don't refresh lastUpdate
         if (!g_cacheBack.empty()) {
             uint64_t flickerGuard = now - 100;
             for (auto& [addr, old] : g_cacheFront) {
@@ -241,7 +396,6 @@ static void CacheLoop() {
             }
         }
 
-        // Swap back to front atomically
         SwapEntityCache();
     }
 }

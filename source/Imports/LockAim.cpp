@@ -18,77 +18,81 @@ namespace LockAim {
         Escrever<uint32_t>((uint32_t)(tg + Offsets::ColliderINICDNFOFJB), 0u);
     }
 
-    static void Loop() {
+    static void LoopTick() {
         static std::chrono::steady_clock::time_point kpt;
         static bool kp = false, dc = false;
         static uintptr_t ct = 0;
 
-        while (g_running) {
-            if (!Auth.Attached) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                continue;
-            }
+        if (!Auth.Attached) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            return;
+        }
 
-            if (!AimbotLegit) {
-                if (ct) { Disable(ct); ct = 0; }
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                kp = false; dc = false;
-                continue;
-            }
+        if (!AimbotLegit) {
+            if (ct) { Disable(ct); ct = 0; }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            kp = false; dc = false;
+            return;
+        }
 
-            bool noKey = (AimbotKeyBind == 0);
-            bool kh = noKey || (GetAsyncKeyState(AimbotKeyBind) & 0x8000) != 0;
-            auto now = std::chrono::steady_clock::now();
+        bool noKey = (AimbotKeyBind == 0);
+        bool kh = noKey || (GetAsyncKeyState(AimbotKeyBind) & 0x8000) != 0;
+        auto now = std::chrono::steady_clock::now();
 
-            if (kh && !kp) { kpt = now; kp = true; dc = false; }
-            else if (!kh && kp) {
-                kp = false; dc = false;
-                if (ct) { Disable(ct); ct = 0; }
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
-                continue;
-            }
-
-            if (!kp) { std::this_thread::sleep_for(std::chrono::milliseconds(16)); continue; }
-
-            // Delay configuravel
-            if (!dc) {
-                static const int delays[] = { 0, 235, 325, 415 };
-                int ix = (AimbotPeitosIndex < 0) ? 0 : (AimbotPeitosIndex > 3) ? 3 : AimbotPeitosIndex;
-                auto el = std::chrono::duration_cast<std::chrono::milliseconds>(now - kpt).count();
-                if (el >= delays[ix]) dc = true;
-                else { std::this_thread::sleep_for(std::chrono::milliseconds(8)); continue; }
-            }
-
-            uintptr_t tg = g_target.load();
-            if (!tg) {
-                if (ct) { Disable(ct); ct = 0; }
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
-                continue;
-            }
-
-            if (ct && ct != tg) Disable(ct);
-            ct = tg;
-
-            uintptr_t hca = tg + Offsets::ColliderHECFNHJKOMN;
-            uintptr_t laa = tg + Offsets::ColliderINICDNFOFJB;
-            if (hca < 0x10000 || laa < 0x10000) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
-                continue;
-            }
-
-            uint32_t hc = Ler<uint32_t>((uint32_t)hca);
-            if (hc == 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
-                continue;
-            }
-
-            uint32_t cr = Ler<uint32_t>((uint32_t)laa);
-            if (cr != hc) {
-                Escrever<uint32_t>((uint32_t)laa, 0u);
-                Escrever<uint32_t>((uint32_t)laa, hc);
-            }
-
+        if (kh && !kp) { kpt = now; kp = true; dc = false; return; }
+        else if (!kh && kp) {
+            kp = false; dc = false;
+            if (ct) { Disable(ct); ct = 0; }
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            return;
+        }
+
+        if (!kp) { std::this_thread::sleep_for(std::chrono::milliseconds(16)); return; }
+
+        // Delay configuravel
+        if (!dc) {
+            static const int delays[] = { 0, 235, 325, 415 };
+            int ix = (AimbotPeitosIndex < 0) ? 0 : (AimbotPeitosIndex > 3) ? 3 : AimbotPeitosIndex;
+            auto el = std::chrono::duration_cast<std::chrono::milliseconds>(now - kpt).count();
+            if (el >= delays[ix]) dc = true;
+            else { std::this_thread::sleep_for(std::chrono::milliseconds(8)); return; }
+        }
+
+        uintptr_t tg = g_target.load();
+        if (!tg) {
+            if (ct) { Disable(ct); ct = 0; }
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            return;
+        }
+
+        if (ct && ct != tg) Disable(ct);
+        ct = tg;
+
+        uintptr_t hca = tg + Offsets::ColliderHECFNHJKOMN;
+        uintptr_t laa = tg + Offsets::ColliderINICDNFOFJB;
+        if (hca < 0x10000 || laa < 0x10000) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            return;
+        }
+
+        uint32_t hc = Ler<uint32_t>((uint32_t)hca);
+        if (hc == 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            return;
+        }
+
+        uint32_t cr = Ler<uint32_t>((uint32_t)laa);
+        if (cr != hc) {
+            Escrever<uint32_t>((uint32_t)laa, 0u);
+            Escrever<uint32_t>((uint32_t)laa, hc);
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    }
+
+    static void Loop() {
+        while (g_running) {
+            __try { LoopTick(); } __except(EXCEPTION_EXECUTE_HANDLER) {}
         }
     }
 

@@ -29,9 +29,34 @@ static void NoRecoilLoop() {
         }
 
         uint32_t weaponData = Ler<uint32_t>(weaponAddr + Offsets::WeaponData);
-        if (weaponData) {
-            Escrever<float>(weaponData + Offsets::WeaponRecoil, 0.0f);
+        if (!weaponData) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
         }
+
+        uint32_t wp = weaponData + Offsets::WeaponParams;
+        uint32_t wp2 = weaponAddr + Offsets::Scatter_Weapon;
+        Escrever<float>(weaponData + Offsets::WeaponRecoil, 0.0f);
+        Escrever<float>(wp + 0x0C, 0.0f);
+        Escrever<float>(wp + 0x10, 0.0f);
+        Escrever<float>(wp + 0x30, 0.0f);
+        Escrever<float>(wp + 0x34, 0.0f);
+        Escrever<float>(wp + 0x38, 0.0f);
+        Escrever<float>(wp + 0x3C, 0.0f);
+        Escrever<float>(wp + 0x40, 0.0f);
+        Escrever<float>(wp + 0x44, 0.0f);
+        Escrever<float>(wp + 0x48, 0.0f);
+        Escrever<float>(wp + 0x4C, 0.0f);
+        Escrever<float>(wp2 + 0x0C, 0.0f);
+        Escrever<float>(wp2 + 0x10, 0.0f);
+        Escrever<float>(wp2 + 0x30, 0.0f);
+        Escrever<float>(wp2 + 0x34, 0.0f);
+        Escrever<float>(wp2 + 0x38, 0.0f);
+        Escrever<float>(wp2 + 0x3C, 0.0f);
+        Escrever<float>(wp2 + 0x40, 0.0f);
+        Escrever<float>(wp2 + 0x44, 0.0f);
+        Escrever<float>(wp2 + 0x48, 0.0f);
+        Escrever<float>(wp2 + 0x4C, 0.0f);
 
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }

@@ -38,7 +38,7 @@ inline const char* ABIToString(ABIType abi) {
 
 inline void GravarRegistroInt(const char* chave, int valor) {
     HKEY hKey;
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, AY_OBFUSCATE("Software\\VOIDCORP"), 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
+    if (RegCreateKeyExA(HKEY_CURRENT_USER, AY_OBFUSCATE("Software\\satella"), 0, NULL, 0, KEY_WRITE, NULL, &hKey, NULL) == ERROR_SUCCESS) {
         RegSetValueExA(hKey, chave, 0, REG_DWORD, (const BYTE*)&valor, sizeof(valor));
         RegCloseKey(hKey);
     }
@@ -47,7 +47,7 @@ inline void GravarRegistroInt(const char* chave, int valor) {
 inline void LerRegistroInt(const char* chave, int& valor) {
     HKEY hKey;
     DWORD tamanho = sizeof(valor);
-    if (RegOpenKeyExA(HKEY_CURRENT_USER, AY_OBFUSCATE("Software\\VOIDCORP"), 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+    if (RegOpenKeyExA(HKEY_CURRENT_USER, AY_OBFUSCATE("Software\\satella"), 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         RegQueryValueExA(hKey, chave, NULL, NULL, (BYTE*)&valor, &tamanho);
         RegCloseKey(hKey);
     }
@@ -173,8 +173,7 @@ inline std::string Shell_Return(const char* cmd) {
 
 
 inline void ShellQuiet_Adb(const char* cmd) {
-    std::string AdbPath = ObterLocalDeInstalacao(_getpid());
-    AdbPath += AY_OBFUSCATE("\\HD-Adb ");
+    std::string AdbPath = std::string(AY_OBFUSCATE("\"")) + ObterLocalDeInstalacao(_getpid()) + std::string(AY_OBFUSCATE("\\HD-Adb\" "));
     AdbPath += cmd;
     ShellQuiet(AdbPath.c_str());
 }
@@ -198,46 +197,81 @@ inline std::string DetectPortFromNetstat() {
     DWORD pid = _getpid();
     std::string cmd = "cmd /c netstat -ano | findstr LISTENING";
     std::string output = Shell_Return(cmd.c_str());
-    if (output.empty()) return "";
-
-    std::istringstream stream(output);
-    std::string line;
     std::string fallback;
 
-    while (std::getline(stream, line)) {
-        if (line.empty()) continue;
-        size_t s = line.find_first_not_of(" \t");
-        if (s != std::string::npos) line = line.substr(s);
-        if (line.empty()) continue;
+    if (!output.empty()) {
+        std::istringstream stream(output);
+        std::string line;
 
-        std::vector<std::string> tokens;
-        {
-            std::istringstream ts(line);
-            std::string t;
-            while (ts >> t) tokens.push_back(t);
-        }
-        if (tokens.size() < 5) continue;
+        while (std::getline(stream, line)) {
+            if (line.empty()) continue;
+            size_t s = line.find_first_not_of(" \t");
+            if (s != std::string::npos) line = line.substr(s);
+            if (line.empty()) continue;
 
-        std::string localAddr = tokens[1];
-        std::string pidStr = tokens[4];
+            std::vector<std::string> tokens;
+            {
+                std::istringstream ts(line);
+                std::string t;
+                while (ts >> t) tokens.push_back(t);
+            }
+            if (tokens.size() < 5) continue;
 
-        // Strategy 1: exact PID match (original)
-        if (pidStr == std::to_string(pid)) return localAddr;
+            std::string localAddr = tokens[1];
+            std::string pidStr = tokens[4];
 
-        // Strategy 2: port in ADB range (5554-5580)
-        auto colonPos = localAddr.rfind(':');
-        if (colonPos != std::string::npos) {
-            std::string portStr = localAddr.substr(colonPos + 1);
-            try {
-                int portnum = std::stoi(portStr);
-                if (portnum >= 5554 && portnum <= 5580) {
-                    fallback = localAddr;
-                }
-            } catch (...) {}
+            if (pidStr == std::to_string(pid)) return localAddr;
+
+            auto colonPos = localAddr.rfind(':');
+            if (colonPos != std::string::npos) {
+                std::string portStr = localAddr.substr(colonPos + 1);
+                try {
+                    int portnum = std::stoi(portStr);
+                    if (portnum >= 5554 && portnum <= 5580) {
+                        fallback = localAddr;
+                    }
+                } catch (...) {}
+            }
         }
     }
 
-    return fallback;
+    if (!fallback.empty()) return fallback;
+
+    // Fallback: try common BlueStacks ADB ports
+    {
+        std::string adbPath = std::string(AY_OBFUSCATE("\"")) + ObterLocalDeInstalacao(_getpid()) + std::string(AY_OBFUSCATE("\\HD-Adb\" devices"));
+        std::string devOut = Shell_Return(adbPath.c_str());
+        if (!devOut.empty()) {
+            std::istringstream ds(devOut);
+            std::string dl;
+            while (std::getline(ds, dl)) {
+                if (dl.find(AY_OBFUSCATE("emulator-")) != std::string::npos) {
+                    auto pos = dl.find(AY_OBFUSCATE("emulator-"));
+                    std::string portStr = dl.substr(pos + 9);
+                    auto sp = portStr.find_first_of(" \t");
+                    if (sp != std::string::npos) portStr = portStr.substr(0, sp);
+                    try {
+                        int p = std::stoi(portStr);
+                        return std::string(AY_OBFUSCATE("127.0.0.1:")) + std::to_string(p);
+                    } catch (...) {}
+                }
+            }
+        }
+    }
+
+    for (int port = 5555; port <= 5560; port++) {
+        std::string test = std::string(AY_OBFUSCATE("127.0.0.1:")) + std::to_string(port);
+        std::string ping = std::string(AY_OBFUSCATE("\"")) + ObterLocalDeInstalacao(_getpid()) + std::string(AY_OBFUSCATE("\\HD-Adb\" connect ")) + test;
+        ShellQuiet(ping.c_str());
+        std::string chk = std::string(AY_OBFUSCATE("\"")) + ObterLocalDeInstalacao(_getpid()) + std::string(AY_OBFUSCATE("\\HD-Adb\" devices"));
+        std::string out2 = Shell_Return(chk.c_str());
+        std::string target = std::string(AY_OBFUSCATE("emulator-")) + std::to_string(port);
+        if (out2.find(target) != std::string::npos || out2.find(AY_OBFUSCATE("device")) != std::string::npos) {
+            return test;
+        }
+    }
+
+    return "";
 }
 
 inline ABIType DetectABIFromAndroid() {
@@ -577,7 +611,9 @@ template<typename T>
 T Ler(uint32_t virtualAddress) {
     T var{};
     void* pVM = VMM.pVM;
-    if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
+    if (pVM == nullptr) return T();
+
+    if (PGMPhysGCPtr2GCPhys != nullptr) {
         for (int cpuId = 0; cpuId < 4; cpuId++) {
             void* cpu = VMMGetCpuById(pVM, cpuId);
             if (cpu == nullptr) continue;
@@ -589,13 +625,28 @@ T Ler(uint32_t virtualAddress) {
             }
         }
     }
+
+    // Fallback: manual page walk se PGMPhysGCPtr2GCPhys nao disponivel ou falhou
+    if (VMM.GuestCR3 != 0) {
+        uintptr_t physAddr = 0;
+        if (TranslateVirtualToPhysical(virtualAddress, VMM.GuestCR3, physAddr)) {
+            if (physAddr != 0) {
+                if (PGMPhysRead(pVM, physAddr, &var, sizeof(T)) == 0) {
+                    return var;
+                }
+            }
+        }
+    }
+
     return T();
 }
 
 template<typename T>
 void Escrever(uint32_t virtualAddress, T value) {
     void* pVM = VMM.pVM;
-    if (pVM != nullptr && PGMPhysGCPtr2GCPhys != nullptr) {
+    if (pVM == nullptr) return;
+
+    if (PGMPhysGCPtr2GCPhys != nullptr) {
         for (int cpuId = 0; cpuId < 4; cpuId++) {
             void* cpu = VMMGetCpuById(pVM, cpuId);
             if (cpu == nullptr) continue;
@@ -603,6 +654,16 @@ void Escrever(uint32_t virtualAddress, T value) {
             if (PGMPhysGCPtr2GCPhys(cpu, virtualAddress, &physAddr) == 0) {
                 PGMPhysWrite(pVM, physAddr, &value, sizeof(T));
                 return;
+            }
+        }
+    }
+
+    // Fallback: manual page walk
+    if (VMM.GuestCR3 != 0) {
+        uintptr_t physAddr = 0;
+        if (TranslateVirtualToPhysical(virtualAddress, VMM.GuestCR3, physAddr)) {
+            if (physAddr != 0) {
+                PGMPhysWrite(pVM, physAddr, &value, sizeof(T));
             }
         }
     }
@@ -625,10 +686,18 @@ inline void LoadLibraryAndHook() {
         LPCSTR fn2 = AY_OBFUSCATE("PGMPhysRead");
         LPCSTR fn3 = AY_OBFUSCATE("PGMPhysWrite");
         LPCSTR fn4 = AY_OBFUSCATE("PGMPhysGCPtr2GCPhys");
+        LPCSTR fn5 = AY_OBFUSCATE("CPUMGetGuestCR3");
         VMMGetCpuById = (void* (*)(void*, int))GetProcAddress(BstkVMM, fn1);
         PGMPhysRead = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn2);
         PGMPhysWrite = (int (*)(void*, uintptr_t, void*, size_t))GetProcAddress(BstkVMM, fn3);
         PGMPhysGCPtr2GCPhys = (int (*)(void*, uintptr_t, uintptr_t*))GetProcAddress(BstkVMM, fn4);
+        CPUMGetGuestCR3 = (uint64_t(*)(void*))GetProcAddress(BstkVMM, fn5);
+
+        std::cout << "[LoadLibrary] VMMGetCpuById=" << (void*)VMMGetCpuById << std::endl;
+        std::cout << "[LoadLibrary] PGMPhysRead=" << (void*)PGMPhysRead << std::endl;
+        std::cout << "[LoadLibrary] PGMPhysWrite=" << (void*)PGMPhysWrite << std::endl;
+        std::cout << "[LoadLibrary] PGMPhysGCPtr2GCPhys=" << (void*)PGMPhysGCPtr2GCPhys << std::endl;
+        std::cout << "[LoadLibrary] CPUMGetGuestCR3=" << (void*)CPUMGetGuestCR3 << std::endl;
 
         std::cout << "[LoadLibrary] MH_Initialize=" << MH_Initialize() << std::endl;
         std::cout << "[LoadLibrary] MH_CreateHook=" << MH_CreateHook(PGMPhysRead, PGMPhysReadHook, (LPVOID*)&PGMPhysRead_Orig) << std::endl;
@@ -642,8 +711,18 @@ inline void LoadLibraryAndHook() {
         std::cout << "[LoadLibrary] waitAttempts=" << waitAttempts << " VMM.pVM=" << (void*)VMM.pVM << std::endl;
         
         if (VMM.pVM == nullptr) { std::cout << "[LoadLibrary] VMM.pVM==NULL, retornando" << std::endl; return; }
-        VMM.GuestCR3 = 1;
-        std::cout << "[LoadLibrary] SUCESSO! GuestCR3 setado" << std::endl;
+
+        // Captura GuestCR3 do primeiro CPU
+        if (CPUMGetGuestCR3 != nullptr) {
+            for (int cpuId = 0; cpuId < 4; cpuId++) {
+                void* cpu = VMMGetCpuById(VMM.pVM, cpuId);
+                if (cpu != nullptr) {
+                    VMM.GuestCR3 = CPUMGetGuestCR3(cpu);
+                    if (VMM.GuestCR3 != 0) break;
+                }
+            }
+        }
+        std::cout << "[LoadLibrary] SUCESSO! GuestCR3=0x" << std::hex << VMM.GuestCR3 << std::dec << std::endl;
     }
 }
 
